@@ -1,0 +1,177 @@
+"""Generate a self-contained GLB 2.0 rover using only the Python standard library."""
+
+import argparse
+import json
+import math
+import struct
+from pathlib import Path
+
+
+PALETTE = [
+    ("Seafoam ceramic", [0.31, 0.80, 0.64, 1], 0.16, 0.36),
+    ("Dark rubber", [0.035, 0.050, 0.055, 1], 0.05, 0.73),
+    ("Warm ivory", [0.84, 0.87, 0.83, 1], 0.24, 0.32),
+    ("Amber", [0.98, 0.40, 0.075, 1], 0.15, 0.30),
+    ("Lens", [0.06, 0.30, 0.34, 1], 0.65, 0.22),
+]
+
+
+def prism(sides, radius, length):
+    """Build an X-axis cylinder with flat caps and shared side normals."""
+    positions, normals, indices = [], [], []
+    ring = [(math.cos(i * math.tau / sides), math.sin(i * math.tau / sides))
+            for i in range(sides)]
+    for x in (-length / 2, length / 2):
+        for y, z in ring:
+            positions.append((x, y * radius, z * radius))
+            normals.append((0, y, z))
+    for i in range(sides):
+        j = (i + 1) % sides
+        indices.extend((i, j, sides + j, i, sides + j, sides + i))
+    for side in (-1, 1):
+        start = len(positions)
+        x = side * length / 2
+        positions.append((x, 0, 0))
+        normals.append((side, 0, 0))
+        for y, z in ring:
+            positions.append((x, y * radius, z * radius))
+            normals.append((side, 0, 0))
+        for i in range(sides):
+            current, following = start + 1 + i, start + 1 + (i + 1) % sides
+            indices.extend((start, current, following) if side == 1
+                           else (start, following, current))
+    return positions, normals, indices
+
+
+def box(width, height, depth, bevel):
+    """Build a chamfered box from three octagonal rings."""
+    w, h, d = width / 2, height / 2, depth / 2
+    b = min(bevel, w * .48, h * .48, d * .48)
+    rim = [(-w+b, -d), (w-b, -d), (w, -d+b), (w, d-b),
+           (w-b, d), (-w+b, d), (-w, d-b), (-w, -d+b)]
+    rings = [[(x * (w-inset)/w, y, z * (d-inset)/d) for x, z in rim]
+             for y, inset in [(-h, b), (-h+b, 0), (h-b, 0), (h, b)]]
+    positions, normals, indices = [], [], []
+
+    def face(points):
+        u = [points[1][axis] - points[0][axis] for axis in range(3)]
+        v = [points[2][axis] - points[0][axis] for axis in range(3)]
+        cross = [u[(i+1) % 3] * v[(i+2) % 3] - u[(i+2) % 3] * v[(i+1) % 3]
+                 for i in range(3)]
+        length = math.sqrt(sum(n*n for n in cross))
+        normal = tuple(n / length for n in cross)
+        start = len(positions)
+        positions.extend(points)
+        normals.extend([normal] * len(points))
+        for i in range(1, len(points) - 1):
+            indices.extend((start, start+i, start+i+1))
+
+    face(rings[0])
+    face(rings[-1][::-1])
+    for low, high in zip(rings, rings[1:]):
+        for i in range(8):
+            j = (i + 1) % 8
+            face([low[i], high[i], high[j], low[j]])
+    return positions, normals, indices
+
+
+class Model:
+    def __init__(self):
+        self.data = bytearray()
+        self.doc = {
+            "asset": {"version": "2.0", "generator": "ModelCheck Python example"},
+            "scene": 0, "scenes": [{"nodes": []}], "nodes": [], "meshes": [],
+            "bufferViews": [], "accessors": [],
+            "materials": [{"name": name, "pbrMetallicRoughness": {
+                "baseColorFactor": color, "metallicFactor": metal,
+                "roughnessFactor": roughness}} for name, color, metal, roughness in PALETTE],
+        }
+
+    def accessor(self, values, vector, bounds=False):
+        offset = len(self.data)
+        if vector:
+            for value in values:
+                self.data.extend(struct.pack("<3f", *value))
+        else:
+            self.data.extend(struct.pack(f"<{len(values)}H", *values))
+        view = len(self.doc["bufferViews"])
+        self.doc["bufferViews"].append({"buffer": 0, "byteOffset": offset,
+                                        "byteLength": len(self.data) - offset})
+        self.data.extend(b"\x00" * (-len(self.data) % 4))
+        entry = {"bufferView": view, "componentType": 5126 if vector else 5123,
+                 "count": len(values), "type": "VEC3" if vector else "SCALAR"}
+        if bounds:
+            entry["min"] = [min(axis) for axis in zip(*values)]
+            entry["max"] = [max(axis) for axis in zip(*values)]
+        self.doc["accessors"].append(entry)
+        return len(self.doc["accessors"]) - 1
+
+    def part(self, name, geometry, center, material, rotation=None):
+        positions, normals, indices = geometry
+        primitive = {"attributes": {"POSITION": self.accessor(positions, True, True),
+                                      "NORMAL": self.accessor(normals, True)},
+                     "indices": self.accessor(indices, False), "material": material}
+        mesh = len(self.doc["meshes"])
+        self.doc["meshes"].append({"name": name, "primitives": [primitive]})
+        node = {"name": name, "mesh": mesh, "translation": center}
+        if rotation:
+            node["rotation"] = rotation
+        self.doc["scenes"][0]["nodes"].append(len(self.doc["nodes"]))
+        self.doc["nodes"].append(node)
+
+    def write(self, path):
+        self.doc["buffers"] = [{"byteLength": len(self.data)}]
+        document = json.dumps(self.doc, separators=(",", ":")).encode()
+        document += b" " * (-len(document) % 4)
+        size = 12 + 8 + len(document) + 8 + len(self.data)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(struct.pack("<4sII", b"glTF", 2, size)
+                         + struct.pack("<I4s", len(document), b"JSON") + document
+                         + struct.pack("<I4s", len(self.data), b"BIN\x00") + self.data)
+
+
+def make_rover(raised_wheel):
+    model = Model()
+
+    def block(name, size, center, color, bevel=.055):
+        model.part(name, box(*size, bevel), center, color)
+
+    block("Lower chassis", (1.76, .38, 2.19), (0, .60, 0), 1)
+    block("Mint body", (1.96, .51, 2.20), (0, .96, 0), 0, .12)
+    block("Ivory deck", (1.76, .11, 1.96), (0, 1.25, -.05), 2)
+    block("Front bumper", (1.65, .15, .18), (0, .68, 1.18), 2)
+    block("Rear bumper", (1.65, .15, .18), (0, .68, -1.18), 2)
+    block("Cab base", (.73, .28, .63), (.07, 1.43, -.22), 1)
+    block("Sensor housing", (1.13, .52, .64), (.07, 1.76, -.19), 0, .10)
+    block("Sensor face", (.97, .32, .085), (.07, 1.77, .153), 1)
+    block("Sensor lens A", (.36, .22, .06), (-.17, 1.77, .204), 4)
+    block("Sensor lens B", (.36, .22, .06), (.32, 1.77, .204), 4)
+    block("Antenna", (.065, .43, .065), (.40, 2.15, -.34), 2)
+    block("Antenna cap", (.13, .10, .13), (.40, 2.40, -.34), 3)
+    for index in range(4):
+        block(f"Deck vent {index + 1}", (.88, .045, .064), (0, 1.328, .36 + index*.13), 4, .012)
+    for side in (-1, 1):
+        x = side * 1.04
+        block("Side rail", (.15, .14, 1.75), (x, 1.03, 0), 2)
+        block("Marker light", (.32, .16, .08), (side * .66, .96, 1.13), 3)
+        for z in (-.76, .76):
+            y = .59 if raised_wheel and side == 1 and z < 0 else .43
+            model.part("Tire", prism(24, .43, .34), (side * 1.17, y, z), 1)
+            model.part("Rim", prism(24, .27, .05), (side * 1.35, y, z), 2)
+            model.part("Hub", prism(16, .125, .067), (side * 1.39, y, z), 3)
+            for i in range(14):
+                angle = i * math.tau / 14
+                model.part("Tread", box(.29, .06, .13, .015),
+                           (side * 1.17, y + .415 * math.cos(angle),
+                            z + .415 * math.sin(angle)), 1,
+                           (math.sin(angle / 2), 0, 0, math.cos(angle / 2)))
+    return model
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--out", type=Path, default=Path("public/rover.glb"))
+    parser.add_argument("--raised-wheel", action="store_true", help="Lift the rear-right wheel.")
+    args = parser.parse_args()
+    make_rover(args.raised_wheel).write(args.out)
+    print(args.out)

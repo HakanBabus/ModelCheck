@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Inspect local GLB models and capture reproducible review images.">
+  <meta name="color-scheme" content="dark">
+  <title>ModelCheck — GLB workspace</title>
+</head>
+<body>
+  <header class="topbar">
+    <div class="identity"><span class="brand-icon" data-lucide="box"></span><div><strong>ModelCheck</strong><span>GLB workspace</span></div></div>
+    <div class="top-actions">
+      <button id="open-files"><i data-lucide="file-plus-2"></i> Open GLB</button>
+      <button id="open-folder" class="primary"><i data-lucide="folder-open"></i> Open folder</button>
+    </div>
+    <input hidden id="files" aria-label="Open GLB files" type="file" accept=".glb,model/gltf-binary" multiple>
+    <input hidden id="folder" aria-label="Open model folder" type="file" webkitdirectory multiple>
+  </header>
+  <main class="workspace">
+    <aside class="library" aria-label="Model library">
+      <div class="panel-title"><h2>Models</h2><span id="count">0</span></div>
+      <label class="search"><i data-lucide="search"></i><input id="search" type="search" placeholder="Filter models" aria-label="Filter models"></label>
+      <ul id="models"></ul>
+      <div class="library-footer"><i data-lucide="shield-check"></i> Files stay on this device</div>
+    </aside>
+    <section class="preview" aria-label="Model preview">
+      <div class="preview-header"><div><div class="caption">VIEWPORT</div><h1 id="model-title">Loading sample…</h1></div><span id="state" role="status">Loading</span></div>
+      <div id="stage" aria-label="Interactive 3D model">
+        <div id="axes" aria-hidden="true"><span class="y">Y</span><span class="x">X</span><span class="z">Z</span></div>
+        <div id="stage-message" hidden></div>
+        <div class="orbit-help">Drag to orbit <span>·</span> Scroll to zoom <span>·</span> Right-drag to pan</div>
+      </div>
+      <div class="viewport-tools" aria-label="Viewport controls">
+        <div class="views">
+          <button data-view="iso" aria-pressed="true">¾</button>
+          <button data-view="front" aria-pressed="false">Front</button>
+          <button data-view="right" aria-pressed="false">Right</button>
+          <button data-view="top" aria-pressed="false">Top</button>
+        </div>
+        <div class="view-actions">
+          <button id="grid" class="icon" aria-label="Toggle grid" title="Toggle grid" aria-pressed="true"><i data-lucide="grid"></i></button>
+          <button id="wireframe" class="icon" aria-label="Toggle wireframe" title="Toggle wireframe" aria-pressed="false"><i data-lucide="layers"></i></button>
+          <button id="fit" class="icon" aria-label="Fit model" title="Fit model"><i data-lucide="scan"></i></button>
+        </div>
+      </div>
+    </section>
+    <aside class="inspector" aria-label="Model inspector">
+      <section><div class="panel-title"><h2>Inspector</h2><i data-lucide="sliders-horizontal"></i></div><dl id="stats"></dl></section>
+      <section class="capture">
+        <h2>Capture</h2>
+        <p>Export four fixed views for visual review, or save the current camera angle.</p>
+        <button id="sheet" class="primary" disabled><i data-lucide="layout-grid"></i> Download review PNG</button>
+        <button id="snapshot" disabled><i data-lucide="camera"></i> Save current view</button>
+        <button id="report" disabled><i data-lucide="file-json"></i> Download model data</button>
+      </section>
+      <section class="automation">
+        <h2><i data-lucide="terminal"></i> Agent workflow</h2>
+        <p>Generate the same review from a local GLB.</p>
+        <div class="command"><code>npm run inspect -- model.glb</code><button id="copy" class="icon" aria-label="Copy agent command" title="Copy agent command"><i data-lucide="copy"></i></button></div>
+        <span id="copy-status" role="status"></span>
+      </section>
+    </aside>
+  </main>
+  <script type="module" src="/src/app.js"></script>
+</body>
+</html>

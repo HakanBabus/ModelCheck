@@ -1,0 +1,24 @@
+{
+  "name": "modelcheck",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "inspect": "node scripts/inspect.mjs",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "lucide": "1.77.0",
+    "three": "0.187.0"
+  },
+  "devDependencies": {
+    "playwright": "1.65.1",
+    "vite": "8.3.8"
+  }
+}
