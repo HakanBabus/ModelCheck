@@ -11,7 +11,7 @@
   <p>
     <strong>English</strong> · <a href="README.tr.md">Türkçe</a>
     <br>
-    <a href="#quick-start">Quick start</a> · <a href="#agent-workflow">Agent workflow</a> · <a href="PYTHON_MODEL_GUIDE.md">Python guide</a>
+    <a href="https://hakanbabus.github.io/ModelCheck/">Live viewer</a> · <a href="#quick-start">Quick start</a> · <a href="#agent-workflow">Agent workflow</a> · <a href="PYTHON_MODEL_GUIDE.md">Python guide</a>
   </p>
   <a href="docs/rover-comparison.png"><img src="docs/rover-comparison.png" width="1040" alt="Side-by-side rover comparison with a raised rear wheel on the left and aligned wheels on the right"></a>
   <p><sub>The baseline on the left has a raised rear wheel. The triangle count and overall bounds match. The shared side view shows the fix.</sub></p>
@@ -24,7 +24,7 @@
 | Open a GLB or browse a folder of models. Orbit, zoom, switch views, and inspect counts and bounds. | Give a coding agent a GLB path. The CLI returns a PNG for its image tool and JSON for its checks. |
 | Choose **Compare versions** to place a baseline and the current model side by side. | Pass **`--baseline`** to render the same comparison headlessly. |
 
-Comparisons frame both models in **shared GLB coordinates**. Changes in scale and placement stay visible. The viewer reads self-contained **GLB 2.0** files locally and previews animated models in their initial pose.
+Comparisons frame both models in **shared GLB coordinates**. Changes in scale and placement stay visible. The viewer reads self-contained **GLB 2.0** files locally.
 
 ## Quick start
 
@@ -40,6 +40,14 @@ Open the URL printed by Vite. The sample rover loads automatically. Choose **Com
 **Auto orbit** rotates the camera around the active model. Use **Fly** for large scenes. Drag to look, move with **WASD**, use **Q/E** for down/up, hold **Shift** to boost, and press **Esc** to return to orbit. Touchscreens show movement buttons.
 
 Double-click a part to make it the orbit target. Use **Measure** to pick two points and read their straight-line distance in the model's original units.
+
+### Inspect a model in detail
+
+- **Section** reveals geometry behind a movable X, Y or Z plane. Drag the cut position and use **Flip side** to switch which half is visible.
+- **Motion** appears when the GLB contains animation clips. Play a clip, scrub the timeline, or step by 1/30 second. Select **rover-motion.glb** in the sample library to try the sensor sweep and tilt. [See the section and timeline](docs/motion-section.png)
+- **Pin** attaches a note to a point on the model. Click a pin or its note to center the orbit there. **Save pins** stores notes in a JSON file for that exact GLB. **Load pins** merges them back into the review.
+
+**Save current view** captures the visible cut or animation pose. Review sheets and comparisons use the full model in its rest pose. Pins travel in the review link or pins JSON.
 
 ## Agent workflow
 
@@ -73,6 +81,8 @@ npm run --silent share -- public/rover.glb --baseline public/rover-raised.glb --
 
 **`url`** in the JSON result opens the review on the same computer. The server closes after one hour without activity. For a link another device can open, generate the review with **`--static`**, publish the returned **`directory`** to a static host and share that address. The folder contains copies of the selected GLBs. Confirm its audience before publishing.
 
+Add **`--pins review/rover-pins.json`** to include saved point notes from the current GLB. The command verifies the pins file against the GLB before creating a link.
+
 ## Learn and build
 
 - [**Python model guide**](PYTHON_MODEL_GUIDE.md) — Build GLB assets with Python, without Blender. Includes runnable generators, modeling approaches and ways to spot and fix defects in the exported asset.
@@ -84,6 +94,6 @@ npm test
 npm run preview
 ```
 
-The production build is in **`dist/`**. Smoke tests cover file loading, capture downloads, and PNG parity between the browser and the CLI. To test with Edge, set **`MODELCHECK_BROWSER=msedge`**. To host the static viewer with GitHub Pages, set **Settings → Pages → Source** to **GitHub Actions** and run **Deploy demo to Pages**.
+The production build is in **`dist/`**. Smoke tests exercise sections, animation, pins, links and PNG parity between the browser and CLI. To test with Edge, set **`MODELCHECK_BROWSER=msedge`**. To host the static viewer with GitHub Pages, set **Settings → Pages → Source** to **GitHub Actions** and run **Deploy demo to Pages**.
 
 [MIT license](LICENSE)

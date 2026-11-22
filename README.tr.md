@@ -11,7 +11,7 @@
   <p>
     <a href="README.md">English</a> · <strong>Türkçe</strong>
     <br>
-    <a href="#hızlı-başlangıç">Hızlı başlangıç</a> · <a href="#ajan-akışı">Ajan akışı</a> · <a href="PYTHON_MODEL_GUIDE.md">Python rehberi</a>
+    <a href="https://hakanbabus.github.io/ModelCheck/">Canlı görüntüleyici</a> · <a href="#hızlı-başlangıç">Hızlı başlangıç</a> · <a href="#ajan-akışı">Ajan akışı</a> · <a href="PYTHON_MODEL_GUIDE.md">Python rehberi</a>
   </p>
   <a href="docs/rover-comparison.png"><img src="docs/rover-comparison.png" width="1040" alt="Solda arka tekerleği yüksekte kalan, sağda tekerlekleri hizalanmış araç"></a>
   <p><sub>Soldaki modelin arka tekerleği yüksekte. Üçgen sayısı ve dış boyutlar aynı. Ortak yan görünüş düzeltmeyi gösteriyor.</sub></p>
@@ -24,7 +24,7 @@
 | Bir GLB aç veya klasördeki modellere göz at. Modeli döndür, yakınlaştır ve ölçülerine bak. | Kodlama ajanına GLB yolunu ver. Komut, ajanın bakabileceği bir PNG ve okuyabileceği bir JSON üretir. |
 | **Compare versions** ile referans modeli ve yeni sürümü yan yana koy. | **`--baseline`** ile aynı karşılaştırmayı tarayıcı penceresi açmadan al. |
 
-İki model **aynı GLB koordinatları ve ölçekle** çizilir. Boyut ve konum farkları görüntüde kalır. Görüntüleyici, dokuları ve tamponları gömülü **GLB 2.0** dosyalarını yerelde okur. Animasyonlu modeller başlangıç pozunda gösterilir.
+İki model **aynı GLB koordinatları ve ölçekle** çizilir. Boyut ve konum farkları görüntüde kalır. Görüntüleyici, dokuları ve tamponları gömülü **GLB 2.0** dosyalarını yerelde okur.
 
 ## Hızlı başlangıç
 
@@ -40,6 +40,14 @@ Vite’ın yazdırdığı adresi aç. Örnek araç hazır yüklenir. Tekerlek hi
 **Auto orbit** kamerayı modelin çevresinde döndürür. Büyük sahnelerde **Fly** ile gez. Bakmak için sürükle, ilerlemek için **WASD**, alçalmak ve yükselmek için **Q/E**, hızlanmak için **Shift** kullan. **Esc** yörünge moduna döndürür. Dokunmatik ekranda yön düğmeleri görünür.
 
 Bir parçaya çift tıklayarak dönüş merkezini oraya al. **Measure** ile seçtiğin iki noktanın doğrusal uzaklığını modelin orijinal birimiyle ölç.
+
+### Modeli ayrıntılı incele
+
+- **Section** ile X, Y veya Z ekseninde kesit al. Kesitin yerini kaydırıcıyla değiştir, görünen tarafı **Flip side** ile çevir.
+- **Motion**, GLB animasyon içerdiğinde görünür. Klibi oynat, zaman çizelgesinde istediğin ana git veya 1/30 saniyelik adımlarla ilerle. Sensörün hareketini denemek için örneklerden **rover-motion.glb** dosyasını aç. [Kesiti ve zaman çizelgesini gör](docs/motion-section.png)
+- **Pin** ile model üzerindeki bir noktaya not bırak. İşarete veya nota tıklayınca kamera o noktayı dönüş merkezi yapar. **Save pins** notları o GLB dosyasına bağlı bir JSON olarak kaydeder. **Load pins** kaydedilmiş notları mevcut incelemeye ekler.
+
+**Save current view** ekrandaki kesiti veya animasyon pozunu kaydeder. Dört açılı inceleme PNG’si ve karşılaştırmalar tam modeli başlangıç pozunda gösterir. Nokta notları inceleme bağlantısıyla veya ayrı JSON dosyasıyla taşınır.
 
 ## Ajan akışı
 
@@ -73,6 +81,8 @@ npm run --silent share -- public/rover.glb --baseline public/rover-raised.glb --
 
 JSON’daki **`url`** aynı bilgisayarda açılır. Sunucu bir saat kullanılmadığında kapanır. Başka cihazlardan açılacak bir adres için **`--static`** ile oluşturulan **`directory`** klasörünü statik bir sunucuda yayınla ve o adresi paylaş. Klasör seçilen GLB’lerin kopyalarını içerir.
 
+Güncel GLB’nin kayıtlı nokta notlarını eklemek için **`--pins review/rover-pins.json`** kullan. Komut, bağlantıyı oluşturmadan önce not dosyasının GLB ile eşleştiğini doğrular.
+
 ## Rehberler ve geliştirme
 
 - [**Python model rehberi**](PYTHON_MODEL_GUIDE.md) — Blender kullanmadan Python ile GLB üret. Çalıştırılabilir örneklerle modele uygun yöntemleri seç, çıktıdaki sorunları bul ve kaynak kodda düzelt.
@@ -84,6 +94,6 @@ npm test
 npm run preview
 ```
 
-Üretim derlemesi **`dist/`** klasörüne yazılır. Testler dosya açmayı, indirmeleri ve tarayıcı ile CLI’ın aynı PNG’yi üretmesini kontrol eder. Edge ile test etmek için **`MODELCHECK_BROWSER=msedge`** ayarla. Statik görüntüleyiciyi GitHub Pages’te barındırmak için **Settings → Pages → Source** alanını **GitHub Actions** olarak ayarla ve **Deploy demo to Pages** akışını çalıştır.
+Üretim derlemesi **`dist/`** klasörüne yazılır. Testler kesitleri, animasyonları, nokta notlarını, inceleme bağlantılarını ve tarayıcı ile CLI’ın aynı PNG’yi üretmesini kontrol eder. Edge ile test etmek için **`MODELCHECK_BROWSER=msedge`** ayarla. Statik görüntüleyiciyi GitHub Pages’te barındırmak için **Settings → Pages → Source** alanını **GitHub Actions** olarak ayarla ve **Deploy demo to Pages** akışını çalıştır.
 
 [MIT lisansı](LICENSE)

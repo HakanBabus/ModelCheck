@@ -1,16 +1,17 @@
 import {
   ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Box, Camera, ChevronsDown, ChevronsUp,
-  Columns2, FileJson, FilePlus2, FolderOpen, Grid, Layers, LayoutGrid, Link, Navigation, RotateCw,
-  Ruler, Scan, Search, ShieldCheck, X, createIcons,
+  Columns2, FileJson, FilePlus2, FolderOpen, Grid, Layers, LayoutGrid, Link, MapPin, Navigation, RotateCw,
+  Ruler, Scan, Search, ShieldCheck, SkipBack, SkipForward, Slice, X, createIcons,
 } from 'lucide';
+import { PinEditor, readPins } from './pin-editor.js';
 import { Viewer, VIEWS } from './viewer.js';
 import './style.css';
 
 const $ = (id) => document.getElementById(id);
 const icons = {
   ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Box, Camera, ChevronsDown, ChevronsUp,
-  Columns2, FileJson, FilePlus2, FolderOpen, Grid, Layers, LayoutGrid, Link, Navigation, RotateCw,
-  Ruler, Scan, Search, ShieldCheck, X,
+  Columns2, FileJson, FilePlus2, FolderOpen, Grid, Layers, LayoutGrid, Link, MapPin, Navigation, RotateCw,
+  Ruler, Scan, Search, ShieldCheck, SkipBack, SkipForward, Slice, X,
 };
 const renderIcons = () => createIcons({ icons, attrs: { 'aria-hidden': 'true' } });
 renderIcons();
@@ -19,11 +20,12 @@ const stage = $('stage');
 const automation = new URLSearchParams(location.search).has('automation');
 const viewButtons = [...document.querySelectorAll('[data-view]')];
 const modelButtons = [...viewButtons, ...[
-  'grid', 'wireframe', 'fit', 'sheet', 'compare', 'snapshot', 'report', 'fly', 'turntable', 'measure',
+  'grid', 'wireframe', 'fit', 'sheet', 'compare', 'snapshot', 'report', 'fly', 'turntable', 'measure', 'section', 'pin',
 ].map($)];
 const format = new Intl.NumberFormat('en', { maximumSignificantDigits: 4 });
 const countFormat = new Intl.NumberFormat('en');
 let viewer;
+let pinEditor;
 let entries = [];
 let activeEntry;
 let report;
@@ -62,10 +64,10 @@ function staticEntry(name, detail, file = name) {
   };
 }
 
-function setModelPair(current, baseline) {
+function setModelPair(current, baseline, additional = []) {
   current.baseline = baseline;
   if (baseline) baseline.baseline = current;
-  entries = baseline ? [current, baseline] : [current];
+  entries = baseline ? [current, baseline, ...additional] : [current, ...additional];
   return select(current);
 }
 
@@ -88,6 +90,7 @@ async function openSharedReview() {
   const baseline = typeof review.baseline === 'string' && /\.glb$/i.test(review.baseline)
     ? staticEntry(review.baseline, 'Baseline', 'baseline.glb') : null;
   current.shared = true;
+  current.sharedPins = review.pins;
   if (baseline) baseline.shared = true;
   await setModelPair(current, baseline);
 }
@@ -103,7 +106,10 @@ function state(phase, error = '') {
 
 function updateNavigation(mode) {
   if (navigation === mode) return;
-  if (mode !== 'orbit') setMeasuring(false);
+  if (mode !== 'orbit') {
+    pinEditor.cancel();
+    setMeasuring(false);
+  }
   navigation = mode;
   viewer.setNavigation(mode);
   stage.dataset.navigation = mode;
@@ -111,7 +117,7 @@ function updateNavigation(mode) {
   $('fly').setAttribute('aria-pressed', String(mode === 'fly'));
   $('fly-hud').hidden = mode !== 'fly';
   $('speed-control').hidden = mode !== 'fly';
-  $('orbit-hint').hidden = mode === 'fly' || measuring;
+  updateOrbitHint();
   if (mode !== 'orbit') setActiveView('');
 }
 
@@ -122,11 +128,16 @@ function updateMeasureHint(distance) {
 }
 
 function setMeasuring(active) {
+  if (active) {
+    pinEditor.cancel();
+    viewer.inspection.playing = false;
+    updateAnimation();
+  }
   measuring = active;
   $('measure').setAttribute('aria-pressed', String(active));
   stage.toggleAttribute('data-measuring', active);
   $('measure-hint').hidden = !active;
-  $('orbit-hint').hidden = active || navigation === 'fly';
+  updateOrbitHint();
   clearMeasurement();
   if (active) stage.querySelector('canvas').focus({ preventScroll: true });
 }
@@ -138,9 +149,72 @@ function clearMeasurement() {
   $('measurement-distance').textContent = '';
 }
 
-function pickMeasurement(x, y) {
+function updateOrbitHint() {
+  $('orbit-hint').hidden = measuring || pinEditor?.armed || navigation === 'fly';
+}
+
+function pickSurface(x, y) {
+  if (pinEditor.armed) return pinEditor.pick(x, y);
   const result = viewer.measureAt(x, y);
   if (result) updateMeasureHint(result.distance);
+}
+
+function setSection(enabled) {
+  $('section').setAttribute('aria-pressed', String(enabled));
+  $('section-tools').hidden = !enabled;
+  if (enabled) updateSection();
+  else {
+    viewer.inspection.removeSection();
+    viewer.render();
+  }
+}
+
+function updateSection() {
+  const axis = Number($('section-axis').value);
+  const fraction = Number($('section-position').value) / 1000;
+  const flipped = $('section-flip').getAttribute('aria-pressed') === 'true';
+  viewer.inspection.setSection(axis, fraction, flipped, viewer.box);
+  const min = viewer.originalBox.min.getComponent(axis);
+  const max = viewer.originalBox.max.getComponent(axis);
+  $('section-value').textContent = `${'XYZ'[axis]} = ${format.format(min + (max - min) * fraction)}`;
+  clearMeasurement();
+  viewer.render();
+}
+
+function updateAnimation() {
+  const inspection = viewer.inspection;
+  const clip = inspection.clips?.[Number($('animation-clip').value)];
+  const time = inspection.time ?? 0;
+  const duration = clip?.duration ?? 0;
+  $('animation-position').max = duration;
+  $('animation-position').value = time;
+  $('animation-time').textContent = `${time.toFixed(2)} / ${duration.toFixed(2)} s`;
+  $('play-animation').textContent = inspection.playing ? 'Pause' : 'Play';
+  $('rest-animation').disabled = !inspection.action;
+}
+
+function showAnimations(animations) {
+  $('animation-clip').replaceChildren(...animations.map(({ name }, index) => new Option(name || `Clip ${index + 1}`, index)));
+  $('animation-tools').hidden = !animations.length;
+  updateAnimation();
+}
+
+function prepareAnimation() {
+  pinEditor.cancel();
+  setMeasuring(false);
+  const inspection = viewer.inspection;
+  if (!inspection.action) inspection.chooseClip(Number($('animation-clip').value));
+  return inspection;
+}
+
+function clearInspection() {
+  pinEditor.setEntry(undefined);
+  viewer.inspection.stop();
+  showAnimations([]);
+  setSection(false);
+  $('section-axis').value = '0';
+  $('section-position').value = '500';
+  $('section-flip').setAttribute('aria-pressed', 'false');
 }
 
 function setActiveView(view) {
@@ -221,6 +295,7 @@ async function select(entry) {
   $('review-context').hidden = !entry.shared;
   $('copy-review-link').hidden = !entry.shared;
   setMeasuring(false);
+  clearInspection();
   lastBaseline = undefined;
   updateNavigation('orbit');
   report = null;
@@ -233,7 +308,20 @@ async function select(entry) {
     if (version !== ticket) return null;
     const result = await viewer.load(buffer, entry.name);
     if (version !== ticket || !result) return null;
+    let pinError;
+    if (entry.sharedPins !== undefined) {
+      try {
+        entry.pins = await readPins(entry, entry.sharedPins, buffer);
+        delete entry.sharedPins;
+      } catch (error) {
+        pinError = error.message;
+      }
+    }
+    if (version !== ticket) return null;
     report = result;
+    pinEditor.setEntry(entry);
+    if (pinError) pinEditor.status.textContent = pinError;
+    showAnimations(report.animations);
     showStats();
     $('wireframe').setAttribute('aria-pressed', 'false');
     setActiveView('iso');
@@ -256,6 +344,7 @@ function importFiles(files, replace) {
       $('review-context').hidden = true;
       $('copy-review-link').hidden = true;
       setMeasuring(false);
+      clearInspection();
       lastBaseline = undefined;
       updateNavigation('orbit');
       report = null;
@@ -483,9 +572,50 @@ function viewerControls() {
     setMeasuring(!measuring);
   });
   $('clear-measurement').addEventListener('click', clearMeasurement);
+  $('section').addEventListener('click', () => setSection($('section-tools').hidden));
+  $('section-axis').addEventListener('change', updateSection);
+  $('section-position').addEventListener('input', updateSection);
+  $('section-flip').addEventListener('click', (event) => {
+    event.currentTarget.setAttribute('aria-pressed', String(event.currentTarget.getAttribute('aria-pressed') !== 'true'));
+    updateSection();
+  });
+  $('animation-clip').addEventListener('change', () => {
+    prepareAnimation().chooseClip(Number($('animation-clip').value));
+    updateAnimation();
+    viewer.render();
+  });
+  $('play-animation').addEventListener('click', () => {
+    const inspection = prepareAnimation();
+    if (inspection.time >= inspection.action.getClip().duration) inspection.seek(0);
+    inspection.playing = !inspection.playing;
+    updateAnimation();
+    viewer.render();
+  });
+  function seekAnimation(seconds) {
+    const inspection = prepareAnimation();
+    inspection.playing = false;
+    inspection.seek(seconds);
+    updateAnimation();
+    viewer.render();
+  }
+  $('animation-position').addEventListener('input', (event) => seekAnimation(Number(event.target.value)));
+  $('animation-back').addEventListener('click', () => seekAnimation(viewer.inspection.time - 1 / 30));
+  $('animation-forward').addEventListener('click', () => seekAnimation(viewer.inspection.time + 1 / 30));
+  $('animation-speed').addEventListener('change', (event) => { viewer.inspection.speed = Number(event.target.value); });
+  $('animation-repeat').addEventListener('change', (event) => { viewer.inspection.repeat = event.target.checked; });
+  $('rest-animation').addEventListener('click', () => {
+    setMeasuring(false);
+    viewer.inspection.stop();
+    updateAnimation();
+    viewer.render();
+  });
   $('fly-speed').addEventListener('change', (event) => viewer.setFlySpeed(Number(event.target.value)));
   stage.addEventListener('keydown', (event) => {
-    if (event.code === 'Escape' && measuring) {
+    if (event.code === 'Escape' && pinEditor.armed) {
+      event.preventDefault();
+      pinEditor.cancel();
+      $('pin').focus({ preventScroll: true });
+    } else if (event.code === 'Escape' && measuring) {
       event.preventDefault();
       setMeasuring(false);
       $('measure').focus({ preventScroll: true });
@@ -493,10 +623,10 @@ function viewerControls() {
       event.preventDefault();
       updateNavigation('orbit');
       $('fly').focus({ preventScroll: true });
-    } else if (event.code === 'Enter' && measuring && event.target instanceof HTMLCanvasElement) {
+    } else if (event.code === 'Enter' && (measuring || pinEditor.armed) && event.target instanceof HTMLCanvasElement) {
       event.preventDefault();
       const area = event.target.getBoundingClientRect();
-      pickMeasurement(area.left + area.width / 2, area.top + area.height / 2);
+      pickSurface(area.left + area.width / 2, area.top + area.height / 2);
     }
   });
   const move = (direction, pressed) => viewer.fly.setTouch(direction, pressed);
@@ -517,7 +647,7 @@ function viewerControls() {
   }
   let start;
   stage.addEventListener('pointerdown', (event) => {
-    if (!measuring || event.button !== 0 || !(event.target instanceof HTMLCanvasElement)) return;
+    if (!(measuring || pinEditor.armed) || event.button !== 0 || !(event.target instanceof HTMLCanvasElement)) return;
     start = { id: event.pointerId, x: event.clientX, y: event.clientY, dragged: false };
   });
   stage.addEventListener('pointermove', (event) => {
@@ -528,14 +658,14 @@ function viewerControls() {
   });
   stage.addEventListener('pointerup', (event) => {
     if (start?.id !== event.pointerId) return;
-    if (measuring && !start.dragged && Math.hypot(event.clientX - start.x, event.clientY - start.y) <= 5) {
-      pickMeasurement(event.clientX, event.clientY);
+    if ((measuring || pinEditor.armed) && !start.dragged && Math.hypot(event.clientX - start.x, event.clientY - start.y) <= 5) {
+      pickSurface(event.clientX, event.clientY);
     }
     start = undefined;
   });
   stage.addEventListener('pointercancel', () => { start = undefined; });
   stage.addEventListener('dblclick', (event) => {
-    if (report && !measuring && navigation === 'orbit' && event.target instanceof HTMLCanvasElement
+    if (report && !measuring && !pinEditor.armed && navigation === 'orbit' && event.target instanceof HTMLCanvasElement
         && viewer.focusAt(event.clientX, event.clientY)) setActiveView('');
   });
 }
@@ -577,6 +707,32 @@ window.addEventListener('drop', (event) => {
 
 try {
   viewer = new Viewer(stage);
+  pinEditor = new PinEditor(viewer, {
+    start() {
+      updateNavigation('orbit');
+      setMeasuring(false);
+      viewer.inspection.stop();
+      updateAnimation();
+      viewer.render();
+    },
+    label(active) {
+      stage.toggleAttribute('data-pinning', active);
+      $('pin-hint').hidden = !active;
+      updateOrbitHint();
+    },
+    focus(point) {
+      pinEditor.cancel();
+      updateNavigation('orbit');
+      setMeasuring(false);
+      viewer.inspection.stop();
+      updateAnimation();
+      if (!viewer.inspection.allows(point)) setSection(false);
+      setActiveView('');
+    },
+    save: downloadJson,
+  });
+  viewer.onRender = () => pinEditor.update();
+  viewer.onAnimationFrame = updateAnimation;
   window.modelCheck = Object.freeze({
     async open(file) {
       if (!(file instanceof File) || !/\.glb$/i.test(file.name)) throw new Error('Provide a .glb File.');
@@ -614,7 +770,9 @@ try {
       state('Error', error.message);
     });
   } else {
-    setModelPair(staticEntry('rover.glb', 'Aligned wheels'), staticEntry('rover-raised.glb', 'Raised rear wheel'));
+    setModelPair(staticEntry('rover.glb', 'Aligned wheels'), staticEntry('rover-raised.glb', 'Raised rear wheel'), [
+      staticEntry('rover-motion.glb', 'Sensor sweep and tilt'),
+    ]);
   }
 } catch (error) {
   $('model-title').textContent = 'Renderer unavailable';

@@ -111,6 +111,17 @@ In the **Right (+X)** comparison, the rear-right tire on the baseline is higher 
 - **`PALETTE`** sets linear RGBA base colors, metallic factors, and roughness.
 - **`Model.write()`** packs indexed triangle geometry, normals, transforms, and materials into a single GLB. Mesh coordinates follow glTF's Y-up convention. This rover treats +Z as its front.
 
+### Give a rigid part a pivot and two motion clips
+
+```sh
+python examples/generate_rover.py --animate --out review/rover-motion.glb
+npm run dev
+```
+
+In **`animate_sensor()`**, the housing, face and lenses become children of a **pivot node** at the sensor mount. Their translations are converted to offsets from the pivot. Both clips rotate that node, so the pieces stay aligned as a group. The Python writer stores keyframe times in seconds and rotations as unit quaternions. The two clips share timings and use different rotation axes. A skinned character, morphing surface or articulated chain may call for a different Python exporter and scene structure.
+
+Open the exported GLB in ModelCheck and choose **Sensor sweep**. Scrub to about **0.70 s** and **1.45 s** to inspect both extremes. Check that the housing turns around the mount, the lenses follow it, and the chassis remains still. Choose **Sensor tilt** to check clearance from the deck. **Save current view** captures the pose for an agent's image tool. Use **Rest pose** to return to the original assembly.
+
 ## Build a hollow vessel from a profile
 
 This example makes a ceramic vessel with a slightly tapered wall, rounded lip and recessed interior. The **profile** gives you control over those features. Change the radii and heights to explore other silhouettes, or add a handle as a separate swept mesh. This version of the helper expects an ordered profile with a pole at each end and positive radii between them.

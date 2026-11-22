@@ -10,6 +10,7 @@ import dracoWasm from 'three/addons/libs/draco/gltf/draco_decoder.wasm?url';
 import basisScript from 'three/addons/libs/basis/basis_transcoder.js?url';
 import basisWasm from 'three/addons/libs/basis/basis_transcoder.wasm?url';
 import { FlyControls } from './fly-controls.js';
+import { Inspection } from './inspection.js';
 
 export const VIEWS = {
   iso: { label: '3/4', direction: [1, .7, 1.22], up: [0, 1, 0] },
@@ -131,6 +132,7 @@ export class Viewer {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
+    this.inspection = new Inspection(this.renderer);
     stage.prepend(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
@@ -174,11 +176,15 @@ export class Viewer {
     this.renderer.setAnimationLoop((now) => {
       const seconds = lastFrame === undefined ? 0 : Math.min((now - lastFrame) / 1000, .05);
       lastFrame = now;
+      const animated = this.inspection.tick(seconds);
+      let moved = false;
       if (this.fly.enabled) {
-        if (this.fly.update(seconds)) this.render();
+        moved = this.fly.update(seconds);
       } else {
-        this.controls.update(seconds);
+        moved = this.controls.update(seconds);
       }
+      if ((this.fly.enabled && moved) || (animated && !moved)) this.render();
+      if (animated) this.onAnimationFrame?.();
     });
   }
 
@@ -201,6 +207,7 @@ export class Viewer {
 
   render() {
     this.renderer.render(this.scene, this.camera);
+    this.onRender?.();
     const inverse = this.camera.quaternion.clone().invert();
     this.axes.forEach((axis, index) => {
       const direction = new THREE.Vector3().setComponent(index === 0 ? 1 : index === 1 ? 0 : 2, 1);
@@ -224,16 +231,17 @@ export class Viewer {
     }
     const metadata = describe(root, originalBox, result.animations, name, buffer.byteLength);
     if (identity) metadata.identity = identity;
-    return { root, originalBox, metadata };
+    return { root, originalBox, metadata, clips: result.animations };
   }
 
   async load(buffer, name) {
     const generation = this.generation = (this.generation ?? 0) + 1;
-    const { root, originalBox, metadata } = await this.readModel(buffer, name);
+    const { root, originalBox, metadata, clips } = await this.readModel(buffer, name);
     if (generation !== this.generation) {
       disposeModel(root);
       return null;
     }
+    this.inspection.load(root, clips);
     if (this.model) {
       this.model.removeFromParent();
       disposeModel(this.model);
@@ -347,7 +355,7 @@ export class Viewer {
       for (let node = result.object; node; node = node.parent) {
         if (!node.visible) return false;
       }
-      return result.object.isMesh;
+      return result.object.isMesh && this.inspection.allows(result.point);
     });
     return hit?.point.clone();
   }
@@ -355,10 +363,31 @@ export class Viewer {
   focusAt(clientX, clientY) {
     const point = this.pickPoint(clientX, clientY);
     if (!point) return false;
+    this.focusPoint(point);
+    return true;
+  }
+
+  focusPoint(point) {
     this.controls.target.copy(point);
     this.controls.update();
     this.render();
-    return true;
+  }
+
+  pointInModel(clientX, clientY) {
+    const point = this.pickPoint(clientX, clientY);
+    return point ? this.model.worldToLocal(point).toArray() : undefined;
+  }
+
+  modelPoint(position) {
+    return this.model.localToWorld(new THREE.Vector3(...position));
+  }
+
+  projectModelPoint(position) {
+    const point = this.modelPoint(position);
+    if (!this.inspection.allows(point)) return null;
+    const projected = point.project(this.camera);
+    if (!projected.toArray().every((value) => value >= -1 && value <= 1)) return null;
+    return [(projected.x + 1) * 50, (1 - projected.y) * 50];
   }
 
   measureAt(clientX, clientY) {
@@ -429,7 +458,7 @@ export class Viewer {
     }
     try {
       this.renderer.setPixelRatio(1);
-      return draw();
+      return clean ? this.inspection.withRestPose(draw) : draw();
     } finally {
       for (const [material, wireframe] of materialModes) material.wireframe = wireframe;
       this.grid.visible = gridVisible;

@@ -92,30 +92,34 @@ class Model:
                 identity["revision"] = revision
             self.doc["asset"]["extras"] = {"modelcheck": identity}
 
-    def accessor(self, values, vector, bounds=False):
+    def accessor(self, values, layout, bounds=False):
         offset = len(self.data)
-        if vector:
+        formats = {"VEC3": ("<3f", 5126), "VEC4": ("<4f", 5126),
+                   "seconds": ("<f", 5126), "indices": ("<H", 5123)}
+        packing, component = formats[layout]
+        if layout.startswith("VEC"):
             for value in values:
-                self.data.extend(struct.pack("<3f", *value))
+                self.data.extend(struct.pack(packing, *value))
         else:
-            self.data.extend(struct.pack(f"<{len(values)}H", *values))
+            self.data.extend(struct.pack(f"<{len(values)}{packing[-1]}", *values))
         view = len(self.doc["bufferViews"])
         self.doc["bufferViews"].append({"buffer": 0, "byteOffset": offset,
                                         "byteLength": len(self.data) - offset})
         self.data.extend(b"\x00" * (-len(self.data) % 4))
-        entry = {"bufferView": view, "componentType": 5126 if vector else 5123,
-                 "count": len(values), "type": "VEC3" if vector else "SCALAR"}
+        entry = {"bufferView": view, "componentType": component, "count": len(values),
+                 "type": layout if layout.startswith("VEC") else "SCALAR"}
         if bounds:
-            entry["min"] = [min(axis) for axis in zip(*values)]
-            entry["max"] = [max(axis) for axis in zip(*values)]
+            axes = list(zip(*values)) if layout.startswith("VEC") else [values]
+            entry["min"] = [min(axis) for axis in axes]
+            entry["max"] = [max(axis) for axis in axes]
         self.doc["accessors"].append(entry)
         return len(self.doc["accessors"]) - 1
 
     def part(self, name, geometry, center, material, rotation=None):
         positions, normals, indices = geometry
-        primitive = {"attributes": {"POSITION": self.accessor(positions, True, True),
-                                      "NORMAL": self.accessor(normals, True)},
-                     "indices": self.accessor(indices, False), "material": material}
+        primitive = {"attributes": {"POSITION": self.accessor(positions, "VEC3", True),
+                                      "NORMAL": self.accessor(normals, "VEC3")},
+                     "indices": self.accessor(indices, "indices"), "material": material}
         mesh = len(self.doc["meshes"])
         self.doc["meshes"].append({"name": name, "primitives": [primitive]})
         node = {"name": name, "mesh": mesh, "translation": center}
@@ -135,7 +139,35 @@ class Model:
                          + struct.pack("<I4s", len(self.data), b"BIN\x00") + self.data)
 
 
-def make_rover(raised_wheel):
+def animate_sensor(model):
+    nodes = model.doc["nodes"]
+    roots = model.doc["scenes"][0]["nodes"]
+    pivot = (.07, 1.52, -.19)
+    children = [index for index in roots if nodes[index]["name"].startswith("Sensor ")]
+    for index in children:
+        node = nodes[index]
+        node["translation"] = [value - origin for value, origin in zip(node["translation"], pivot)]
+        roots.remove(index)
+    target = len(nodes)
+    nodes.append({"name": "Sensor pivot", "translation": pivot, "children": children})
+    roots.append(target)
+
+    times = model.accessor([0, .7, 1.45, 2.2], "seconds", bounds=True)
+    model.doc["animations"] = []
+    for name, axis, amplitude in (("Sensor sweep", 1, .78), ("Sensor tilt", 0, .32)):
+        rotations = []
+        for angle in (0, amplitude, -amplitude, 0):
+            rotation = [0, 0, 0, math.cos(angle / 2)]
+            rotation[axis] = math.sin(angle / 2)
+            rotations.append(rotation)
+        model.doc["animations"].append({
+            "name": name,
+            "samplers": [{"input": times, "output": model.accessor(rotations, "VEC4"), "interpolation": "LINEAR"}],
+            "channels": [{"sampler": 0, "target": {"node": target, "path": "rotation"}}],
+        })
+
+
+def make_rover(raised_wheel, animate=False):
     model = Model("modelcheck:rover", "v1" if raised_wheel else "v2")
 
     def block(name, size, center, color, bevel=.055):
@@ -170,13 +202,18 @@ def make_rover(raised_wheel):
                            (side * 1.17, y + .415 * math.cos(angle),
                             z + .415 * math.sin(angle)), 1,
                            (math.sin(angle / 2), 0, 0, math.cos(angle / 2)))
+    if animate:
+        model.doc["asset"]["extras"]["modelcheck"]["revision"] += "-motion"
+        animate_sensor(model)
     return model
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out", type=Path, default=Path("public/rover.glb"))
+    parser.add_argument("--out", type=Path)
     parser.add_argument("--raised-wheel", action="store_true", help="Lift the rear-right wheel.")
+    parser.add_argument("--animate", action="store_true", help="Include sensor sweep and tilt clips.")
     args = parser.parse_args()
-    make_rover(args.raised_wheel).write(args.out)
-    print(args.out)
+    output = args.out or Path("public/rover-motion.glb" if args.animate else "public/rover.glb")
+    make_rover(args.raised_wheel, args.animate).write(output)
+    print(output)

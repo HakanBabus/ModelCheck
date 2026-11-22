@@ -134,8 +134,8 @@ h1 { font-size: clamp(1.4rem, 2.45vw, 2.08rem); font-weight: 650; letter-spacing
 #state[data-error] { color: #ffc8b6; }
 #stage {
   min-height: 390px;
-  height: clamp(430px, 62svh, 800px);
-  flex: 1;
+  height: clamp(430px, calc(100svh - 250px), 800px);
+  flex: none;
   position: relative;
   overflow: hidden;
   border: 1px solid #373e38;
@@ -147,7 +147,7 @@ h1 { font-size: clamp(1.4rem, 2.45vw, 2.08rem); font-weight: 650; letter-spacing
 #stage canvas:active { cursor: grabbing; }
 #stage canvas:focus-visible { outline-offset: -3px; }
 #stage[data-navigation="fly"] canvas { cursor: crosshair; }
-#stage[data-measuring] canvas { cursor: crosshair; }
+#stage:is([data-measuring], [data-pinning]) canvas { cursor: crosshair; }
 .viewport-hint {
   position: absolute;
   bottom: .75rem;
@@ -205,6 +205,57 @@ body.dragging #stage { outline: 3px solid var(--accent); outline-offset: -4px; }
 #speed-control select { padding: .25rem; }
 .review-tools { padding-top: .35rem; border-top: 1px solid var(--line); justify-content: flex-end; }
 .review-tools button { background: transparent; }
+.tool-tray {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .45rem;
+  padding: .5rem .65rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+}
+.tool-tray label { display: inline-flex; align-items: center; gap: .4rem; color: var(--muted); font-size: .8rem; }
+.tool-tray button, .tool-tray select { min-height: 32px; }
+.tool-tray select { max-width: min(48vw, 14rem); padding: .22rem .4rem; }
+.tool-tray .slider-control { flex: 1 1 175px; }
+.tool-tray input { accent-color: var(--accent); }
+.tool-tray input[type="range"] { flex: 1 1 110px; width: 100%; min-width: 72px; margin: 0; }
+.tool-tray output { color: var(--accent); font: .78rem var(--mono); }
+#animation-time { min-width: 8ch; white-space: nowrap; }
+#play-animation { min-width: 4.3rem; }
+
+#pin-layer { position: absolute; inset: 0; pointer-events: none; }
+button.review-pin {
+  position: absolute;
+  translate: -50% -50%;
+  width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border: 1px solid #171917;
+  border-radius: 50%;
+  color: #171917;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px #171917a8;
+  font: 700 .72rem var(--mono);
+  pointer-events: auto;
+}
+button.review-pin:hover { background: #f1ffcb; }
+#stage:is([data-measuring], [data-pinning], [data-navigation="fly"]) .review-pin { pointer-events: none; }
+#pin-panel { border-top: 1px solid var(--line); }
+#pin-panel svg { color: var(--accent); }
+#pin-empty, #pin-status { margin-top: .55rem; color: var(--muted); font-size: .8rem; line-height: 1.4; }
+#pin-status:empty { display: none; }
+#pin-list { display: grid; gap: .32rem; padding: 0; list-style: none; }
+#pin-list:not(:empty) { margin-top: .6rem; }
+#pin-list li { display: flex; gap: .3rem; align-items: stretch; }
+.pin-note { display: block; flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; text-align: left; font-weight: 400; }
+.pin-remove { min-width: 32px; padding: .2rem; }
+.pin-actions { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .65rem; }
+.pin-actions button { font-size: .78rem; min-height: 32px; }
+#pin-dialog { width: min(430px, calc(100% - 1.5rem)); }
+.pin-form { display: grid; gap: .4rem; padding: .85rem 1rem; color: var(--muted); font-size: .85rem; }
+.pin-form textarea { resize: vertical; padding: .55rem; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: #eff0ed; }
 
 #review-context { border-bottom: 1px solid var(--line); }
 #review-title { overflow-wrap: anywhere; }

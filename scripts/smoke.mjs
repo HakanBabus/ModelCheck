@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,6 +10,7 @@ import { launchBrowser, startSite } from './local-browser.mjs';
 const run = promisify(execFile);
 const sample = 'public/rover.glb';
 const baseline = 'public/rover-raised.glb';
+const motion = 'public/rover-motion.glb';
 const temp = await mkdtemp(join(tmpdir(), 'modelcheck-test-'));
 let browser;
 let site;
@@ -127,6 +129,73 @@ try {
   await page.getByRole('button', { name: 'Measure', exact: true }).click();
   assert(await page.locator('#measure-hint').isHidden());
 
+  const png = async (view) => Buffer.from(await page.evaluate(async (view) => {
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const image = await window.modelCheck.capture({ view, size: 480 });
+    return Array.from(new Uint8Array(await image.arrayBuffer()));
+  }, view));
+  // Native current-view rendering can shift by subpixels across frames.
+  const difference = (first, second) => page.evaluate(async (images) => {
+    const pixels = await Promise.all(images.map(async (encoded) => {
+      const bytes = Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0));
+      const bitmap = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
+      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+      const context = canvas.getContext('2d');
+      context.drawImage(bitmap, 0, 0);
+      bitmap.close();
+      return context.getImageData(0, 0, canvas.width, canvas.height).data;
+    }));
+    if (pixels[0].length !== pixels[1].length) return Infinity;
+    let total = 0;
+    for (let i = 0; i < pixels[0].length; i++) total += Math.abs(pixels[0][i] - pixels[1][i]);
+    return total / pixels[0].length;
+  }, [first.toString('base64'), second.toString('base64')]);
+  await page.getByRole('button', { name: 'Toggle grid' }).click();
+  const intact = await png('current');
+  const canonical = await png('sheet');
+  await page.getByRole('button', { name: 'Section', exact: true }).click();
+  await page.getByLabel('Section axis').selectOption('1');
+  assert.match(await page.locator('#section-value').textContent(), /^Y = /);
+  const section = await png('current');
+  const cutDifference = await difference(intact, section);
+  assert(cutDifference > .5, `The cut should visibly change the current capture (${cutDifference}).`);
+  assert((await png('sheet')).equals(canonical), 'A section must not affect the review sheet.');
+  await page.getByRole('button', { name: 'Flip side' }).click();
+  assert(!(await png('current')).equals(section), 'Flipping the section should show the other side.');
+  await page.getByRole('button', { name: 'Section', exact: true }).click();
+  assert.equal(await page.locator('#section').getAttribute('aria-pressed'), 'false');
+  const restoredSectionDifference = await difference(intact, await png('current'));
+  assert(restoredSectionDifference < cutDifference / 2,
+    `Closing Section should bring back the full model (${restoredSectionDifference} versus ${cutDifference}).`);
+
+  await page.getByRole('button', { name: 'Pin', exact: true }).click();
+  await canvas.click({ position: { x: area.width * .46, y: area.height * .51 } });
+  const pinDialog = page.getByRole('dialog', { name: 'Add a review pin' });
+  const pinText = '<b>Check the front panel fit.</b>';
+  await pinDialog.getByLabel('Note').fill(pinText);
+  await pinDialog.getByRole('button', { name: 'Save pin', exact: true }).click();
+  await page.getByRole('button', { name: 'Focus pin 1' }).waitFor();
+  assert.equal(await page.locator('#pin-list').textContent(), `1. ${pinText}×`);
+  assert.equal(await page.locator('#pin-list b').count(), 0);
+  const [pinDownload] = await Promise.all([
+    page.waitForEvent('download'), page.getByRole('button', { name: 'Save pins' }).click(),
+  ]);
+  const pinsPath = join(temp, 'rover-pins.json');
+  await pinDownload.saveAs(pinsPath);
+  const pinFile = JSON.parse(await readFile(pinsPath, 'utf8'));
+  assert.equal(pinFile.modelSha256, createHash('sha256').update(await readFile(sample)).digest('hex'));
+  assert.equal(pinFile.pins[0].text, pinText);
+  assert(pinFile.pins[0].position.every(Number.isFinite));
+  await page.getByRole('button', { name: 'Remove pin 1' }).click();
+  await page.locator('#pin-file').setInputFiles({
+    name: 'mismatched-pins.json', mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify({ ...pinFile, modelSha256: '0'.repeat(64) })),
+  });
+  await page.getByText('These pins belong to a different GLB file.', { exact: true }).waitFor();
+  await page.locator('#pin-file').setInputFiles(pinsPath);
+  await page.getByText('Pins loaded.', { exact: true }).waitFor();
+  assert.equal(await page.locator('#pin-list li').count(), 1);
+
   await page.getByRole('button', { name: 'Compare versions' }).click();
   const comparisonDialog = page.getByRole('dialog', { name: 'Compare versions' });
   const comparisonImage = comparisonDialog.locator('#comparison-image');
@@ -177,6 +246,40 @@ try {
   await page.keyboard.press('Escape');
   await comparisonDialog.waitFor({ state: 'hidden' });
   assert.deepEqual(await page.evaluate(() => window.modelCheck.report()), sampleData);
+
+  await page.getByRole('button', { name: /rover-motion\.glb/ }).click();
+  await ready();
+  const timeline = page.getByLabel('Animation time');
+  const clips = page.getByLabel('Animation clip');
+  assert.deepEqual(await clips.locator('option').allTextContents(), ['Sensor sweep', 'Sensor tilt']);
+  const rest = await png('current');
+  const motionSheet = await png('sheet');
+  await timeline.fill('0.7');
+  assert.match(await page.locator('#animation-time').textContent(), /^0.70 /);
+  const poseDifference = await difference(rest, await png('current'));
+  assert(poseDifference > .1, `Scrubbing should visibly change the current capture (${poseDifference}).`);
+  assert((await png('sheet')).equals(motionSheet), 'Animated poses must not affect the review sheet.');
+  await page.getByRole('button', { name: 'Next step' }).click();
+  assert.match(await page.locator('#animation-time').textContent(), /^0.73 /);
+  await clips.selectOption('1');
+  assert.equal(Number(await timeline.inputValue()), 0);
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await page.waitForFunction(() => Number(document.getElementById('animation-position').value) > .1);
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await page.getByRole('button', { name: 'Rest pose' }).click();
+  const restoredPoseDifference = await difference(rest, await png('current'));
+  assert(restoredPoseDifference < poseDifference / 2,
+    `Rest pose should restore the original capture (${restoredPoseDifference} versus ${poseDifference}).`);
+  if (process.env.MODELCHECK_INSPECTION_SCREENSHOT) {
+    await timeline.fill('0.7');
+    await page.getByRole('button', { name: 'Section', exact: true }).click();
+    await page.screenshot({ path: process.env.MODELCHECK_INSPECTION_SCREENSHOT, fullPage: true });
+  }
+  await page.getByRole('button', { name: /^rover\.glb/ }).click();
+  await ready();
+  assert(await timeline.isHidden());
+  assert(await page.locator('#section-tools').isHidden());
+  assert.equal(await page.locator('#pin-list li').count(), 1);
   await page.setViewportSize({ width: 390, height: 844 });
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
   if (process.env.MODELCHECK_MOBILE_SCREENSHOT) {
@@ -235,7 +338,7 @@ try {
   await assert.rejects(run(process.execPath, ['scripts/inspect.mjs', sample, '--size', '399']), /size must/);
 
   const share = JSON.parse((await run(process.execPath, [
-    'scripts/share.mjs', sample, '--baseline', baseline, '--dir', temp,
+    'scripts/share.mjs', sample, '--baseline', baseline, '--pins', pinsPath, '--dir', temp,
     '--title', 'Wheel check', '--note', '<b>Check rear-wheel alignment.</b>',
   ])).stdout);
   reviewServerPid = share.serverPid;
@@ -251,6 +354,7 @@ try {
   assert.equal(await shared.locator('#review-note').textContent(), '<b>Check rear-wheel alignment.</b>');
   assert.equal(await shared.locator('#review-note b').count(), 0);
   assert.deepEqual(await shared.evaluate(() => window.modelCheck.report()), sampleData);
+  assert.equal(await shared.locator('#pin-list .pin-note').textContent(), `1. ${pinText}`);
   await shared.getByRole('button', { name: 'Copy review link' }).click();
   await shared.getByRole('button', { name: 'Link copied' }).waitFor();
   assert.equal(await shared.evaluate(() => navigator.clipboard.readText()), share.url);
@@ -265,7 +369,10 @@ try {
   assert.equal(staticReview.scope, 'static');
   assert.equal(staticReview.url, null);
   assert.match(await readFile(staticReview.entry, 'utf8'), /data-shared-review/);
-  console.log('Passed: camera and measurement tools, revision identity, capture parity, and a share link opened in a fresh browser.');
+  await assert.rejects(run(process.execPath, [
+    'scripts/share.mjs', baseline, '--pins', pinsPath, '--static', '--dir', temp,
+  ]), /different GLB file/);
+  console.log('Passed: navigation, measurement, section, animation, pins, revision comparison, capture parity, and shared review.');
 } finally {
   if (reviewServerPid) process.kill(reviewServerPid);
   try { await browser?.close(); } finally {
