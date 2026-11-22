@@ -1,99 +1,62 @@
 <div align="center">
   <h1>ModelCheck</h1>
-  <p><strong>Review generated 3D models, from the browser or the terminal.</strong></p>
-  <p>Open a GLB, render it from four angles, and compare two revisions in the same frame.</p>
+  <p><strong>Give your coding agent a 3D brief. Get a GLB it has actually inspected.</strong></p>
+  <p>Generate in Python · Review the render · Revise the asset</p>
   <p>
     <img src="https://img.shields.io/badge/workflow-local%20first-2c6654" alt="Local-first workflow">
     <img src="https://img.shields.io/badge/format-GLB%202.0-3d526b" alt="GLB 2.0">
-    <a href="#quick-start"><img src="https://img.shields.io/badge/Node.js-22.12%2B-315743" alt="Node.js 22.12 or newer"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-34454d" alt="MIT license"></a>
   </p>
   <p>
-    <strong>English</strong> · <a href="README.tr.md">Türkçe</a>
-    <br>
-    <a href="https://hakanbabus.github.io/ModelCheck/">Live viewer</a> · <a href="#quick-start">Quick start</a> · <a href="#agent-workflow">Agent workflow</a> · <a href="PYTHON_MODEL_GUIDE.md">Python guide</a>
+    <strong>English</strong> · <a href="README.tr.md">Türkçe</a> · <a href="https://hakanbabus.github.io/ModelCheck/?sample=rally-paddle">Live example</a> · <a href="PYTHON_MODEL_GUIDE.md">Python guide</a>
   </p>
-  <a href="docs/rover-comparison.png"><img src="docs/rover-comparison.png" width="1040" alt="Side-by-side rover comparison with a raised rear wheel on the left and aligned wheels on the right"></a>
-  <p><sub>The baseline on the left has a raised rear wheel. The triangle count and overall bounds match. The shared side view shows the fix.</sub></p>
+  <a href="docs/rally-comparison.png"><img src="docs/rally-comparison.png" width="1040" alt="The Rally paddle draft on the left and the centered grip and fitted rubber on the right"></a>
+  <p><sub>Rally, generated in Python. The same front view makes the shifted grip and the revised rubber fit easy to compare.</sub></p>
 </div>
 
-## One viewer, two ways to use it
+## Ask your agent
 
-| In the browser | From the terminal |
-| --- | --- |
-| Open a GLB or browse a folder of models. Orbit, zoom, switch views, and inspect counts and bounds. | Give a coding agent a GLB path. The CLI returns a PNG for its image tool and JSON for its checks. |
-| Choose **Compare versions** to place a baseline and the current model side by side. | Pass **`--baseline`** to render the same comparison headlessly. |
+> Use [ModelCheck](https://github.com/HakanBabus/ModelCheck) to make a detailed table-tennis paddle. Generate it in Python, open the inspection images, critique the result, fix what you find, and give me the final GLB and source.
 
-Comparisons frame both models in **shared GLB coordinates**. Changes in scale and placement stay visible. The viewer reads self-contained **GLB 2.0** files locally.
+The agent can use a local checkout or clone the repository and start with **[AGENTS.md](AGENTS.md)**. The guide leads it through generation, critical visual review, revision and handoff. ModelCheck's job is to turn the resulting GLB into evidence the agent can inspect. The agent chooses how to create the asset. [Blender-free Python guide](PYTHON_MODEL_GUIDE.md) · [Worked Rally example](docs/DETAILED_ASSET_EXAMPLE.md)
 
 ## Quick start
 
-Run the following commands from the repository root with **Node.js 22.12+** installed. The viewer uses **WebGL 2**.
+Run with **Node.js 22.12+** and **Python 3** for the example generator.
 
 ```sh
+git clone --depth 1 https://github.com/HakanBabus/ModelCheck.git
+cd ModelCheck
 npm ci
-npm run dev
+python examples/generate_paddle.py --out review/rally-paddle.glb
+npm run --silent inspect -- review/rally-paddle.glb --out review/rally.png
 ```
 
-Open the URL printed by Vite. The sample rover loads automatically. Choose **Compare versions → Right** to see the wheel alignment, or use **Open GLB** or **Open folder** for your own files. [See the workspace](docs/workspace.png)
+The command prints absolute **`png`** and **`report`** paths as JSON. Open the PNG and check the report for bounds and geometry counts. For focused checks, choose **`--view back`**, **`--view bottom`** or another angle. Add **`--baseline <previous.glb>`** to compare revisions in shared coordinates. Use **`--help`** for all options.
 
-**Auto orbit** rotates the camera around the active model. Use **Fly** for large scenes. Drag to look, move with **WASD**, use **Q/E** for down/up, hold **Shift** to boost, and press **Esc** to return to orbit. Touchscreens show movement buttons.
+Inspection runs locally using Playwright Chromium, Chrome or Edge. To install Chromium, run **`npx playwright install chromium`**. On Linux, use **`npx playwright install --with-deps chromium`** if system browser libraries are missing.
 
-Double-click a part to make it the orbit target. Use **Measure** to pick two points and read their straight-line distance in the model's original units.
+## Browser viewer
 
-### Inspect a model in detail
+Open a self-contained GLB or a folder of models. Use **Auto orbit**, **Fly**, **Measure**, **Section**, **Motion** or **Pin** to inspect it. **Compare versions** uses shared coordinates so shifts in scale and origin stay visible. The exporter can tag a stable asset ID and a distinct revision for easier pairing. [Live example](https://hakanbabus.github.io/ModelCheck/?sample=rally-paddle) · [Revision metadata](PYTHON_MODEL_GUIDE.md#record-which-model-the-versions-belong-to)
 
-- **Section** reveals geometry behind a movable X, Y or Z plane. Drag the cut position and use **Flip side** to switch which half is visible.
-- **Motion** appears when the GLB contains animation clips. Play a clip, scrub the timeline, or step by 1/30 second. Select **rover-motion.glb** in the sample library to try the sensor sweep and tilt. [See the section and timeline](docs/motion-section.png)
-- **Pin** attaches a note to a point on the model. Click a pin or its note to center the orbit there. **Save pins** stores notes in a JSON file for that exact GLB. **Load pins** merges them back into the review.
-
-**Save current view** captures the visible cut or animation pose. Review sheets and comparisons use the full model in its rest pose. Pins travel in the review link or pins JSON.
-
-## Agent workflow
-
-Generate a GLB from Python, render it, and have the agent open the PNG with its image tool. After revising the generator, render the new GLB alongside the baseline and inspect the result.
-
-```sh
-npx playwright install chromium
-npm run --silent inspect -- public/rover.glb --baseline public/rover-raised.glb --view right --out review/rover-comparison.png
-```
-
-The command prints the absolute **`png`** and **`report`** paths as JSON. The report records geometry counts, bounds, and hashes. With a baseline, it also records **current minus baseline** deltas. Rendering runs locally and requires no API key.
-
-The comparison shows whether the exporter-provided **model IDs** match, differ, or are missing. The baseline is selected explicitly. See [how to tag revisions](PYTHON_MODEL_GUIDE.md#record-which-model-the-versions-belong-to).
-
-| Option | What it controls |
-| --- | --- |
-| **`--baseline <file.glb>`** | Compare with an earlier version. Leave it out to inspect one GLB. |
-| **`--view <view>`** | Choose `sheet` (four views), `front`, `right`, `top`, or `iso`. |
-| **`--size <px>`** | Set the PNG width from 480 to 2400 pixels. |
-| **`--out <file.png>`** / **`--report <file.json>`** | Set output paths. The JSON defaults to the PNG path with a `.json` extension. |
-
-On Linux, use `npx playwright install --with-deps chromium` if browser system libraries are missing. Use **`--browser msedge`** to run with an existing Edge installation.
+**Save current view** captures the active cut or pose. Review sheets and comparisons show the full model in its rest pose. Use **`npm run dev`** to start the viewer locally and **`npm run build`** to export the static site into **`dist/`**.
 
 ## Share an interactive review
 
-A coding agent can generate a review link after inspecting its output. The recipient opens the viewer directly on the model, with an optional baseline and a short note.
-
 ```sh
-npm run --silent share -- public/rover.glb --baseline public/rover-raised.glb --title "Rover review" --note "Check the rear wheel from the right."
+npm run --silent share -- review/rally-paddle.glb --title "Rally review"
 ```
 
-**`url`** in the JSON result opens the review on the same computer. The server closes after one hour without activity. For a link another device can open, generate the review with **`--static`**, publish the returned **`directory`** to a static host and share that address. The folder contains copies of the selected GLBs. Confirm its audience before publishing.
+The returned **`url`** opens the GLB on the same computer. The server closes after one idle hour. Add **`--baseline`** to include a comparison or **`--pins`** to include saved notes. For access from another device, use **`--static`** and publish the generated **`directory`** to a host reachable by the reviewer. The directory includes the selected GLBs.
 
-Add **`--pins review/rover-pins.json`** to include saved point notes from the current GLB. The command verifies the pins file against the GLB before creating a link.
+<details>
+<summary>Browser API and development</summary>
 
-## Learn and build
+Open the viewer with **`?automation`** to skip the sample. **`window.modelCheck.open(file)`** accepts a browser **`File`**. **`report()`** returns the active report, **`capture({view, size})`** returns a PNG Blob, and **`compare(baselineFile, {view, size})`** returns the PNG and comparison metadata. Browser automation can also set **`#files`** and wait for **`#state[data-phase="ready"]`** or read **`#stage-message`** on error.
 
-- [**Python model guide**](PYTHON_MODEL_GUIDE.md) — Build GLB assets with Python, without Blender. Includes runnable generators, modeling approaches and ways to spot and fix defects in the exported asset.
-- [**Agent instructions**](AGENTS.md) — Use the CLI or browser API in a coding agent's generate, inspect, and revise loop.
+Run **`npm run build`** and **`npm test`** for browser and CLI coverage. Set **`MODELCHECK_BROWSER=msedge`** to select Edge explicitly.
 
-```sh
-npm run build
-npm test
-npm run preview
-```
-
-The production build is in **`dist/`**. Smoke tests exercise sections, animation, pins, links and PNG parity between the browser and CLI. To test with Edge, set **`MODELCHECK_BROWSER=msedge`**. To host the static viewer with GitHub Pages, set **Settings → Pages → Source** to **GitHub Actions** and run **Deploy demo to Pages**.
+</details>
 
 [MIT license](LICENSE)

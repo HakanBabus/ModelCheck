@@ -1,99 +1,53 @@
 <div align="center">
   <h1>ModelCheck</h1>
-  <p><strong>Ürettiğin 3B modelleri tarayıcıdan veya terminalden incele.</strong></p>
-  <p>GLB dosyasını aç, dört açıdan görüntü al ve iki sürümü aynı kadrajda karşılaştır.</p>
+  <p><strong>Ajana 3B modeli tarif et. Ürettiği GLB’yi gerçekten inceleyip teslim etsin.</strong></p>
+  <p>Python ile üret · Görüntüyü incele · Modeli düzelt</p>
   <p>
     <img src="https://img.shields.io/badge/%C3%A7al%C4%B1%C5%9Fma-yerel-2c6654" alt="Yerel çalışma">
     <img src="https://img.shields.io/badge/bi%C3%A7im-GLB%202.0-3d526b" alt="GLB 2.0">
-    <a href="#hızlı-başlangıç"><img src="https://img.shields.io/badge/Node.js-22.12%2B-315743" alt="Node.js 22.12 veya üzeri"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/lisans-MIT-34454d" alt="MIT lisansı"></a>
   </p>
   <p>
-    <a href="README.md">English</a> · <strong>Türkçe</strong>
-    <br>
-    <a href="https://hakanbabus.github.io/ModelCheck/">Canlı görüntüleyici</a> · <a href="#hızlı-başlangıç">Hızlı başlangıç</a> · <a href="#ajan-akışı">Ajan akışı</a> · <a href="PYTHON_MODEL_GUIDE.md">Python rehberi</a>
+    <a href="README.md">English</a> · <strong>Türkçe</strong> · <a href="https://hakanbabus.github.io/ModelCheck/?sample=rally-paddle">Canlı örnek</a> · <a href="PYTHON_MODEL_GUIDE.md">Python rehberi</a>
   </p>
-  <a href="docs/rover-comparison.png"><img src="docs/rover-comparison.png" width="1040" alt="Solda arka tekerleği yüksekte kalan, sağda tekerlekleri hizalanmış araç"></a>
-  <p><sub>Soldaki modelin arka tekerleği yüksekte. Üçgen sayısı ve dış boyutlar aynı. Ortak yan görünüş düzeltmeyi gösteriyor.</sub></p>
+  <a href="docs/rally-comparison.png"><img src="docs/rally-comparison.png" width="1040" alt="Solda Rally raket taslağı, sağda ortalanmış sap ve kenara uyumlu kauçuk"></a>
+  <p><sub>Python ile üretilen Rally raketi. Ortak ön görünüş, sapın ve kauçuk kenarının nasıl düzeltildiğini gösteriyor.</sub></p>
 </div>
 
-## Tek görüntüleyici, iki kullanım yolu
+## Ajana söyle
 
-| Tarayıcıda | Terminalde |
-| --- | --- |
-| Bir GLB aç veya klasördeki modellere göz at. Modeli döndür, yakınlaştır ve ölçülerine bak. | Kodlama ajanına GLB yolunu ver. Komut, ajanın bakabileceği bir PNG ve okuyabileceği bir JSON üretir. |
-| **Compare versions** ile referans modeli ve yeni sürümü yan yana koy. | **`--baseline`** ile aynı karşılaştırmayı tarayıcı penceresi açmadan al. |
+> [ModelCheck](https://github.com/HakanBabus/ModelCheck) kullanarak detaylı bir masa tenisi raketi yap. Python ile üret, inceleme görsellerini açıp eleştirel bak, bulduğun sorunları düzelt ve son GLB ile kaynak kodu teslim et.
 
-İki model **aynı GLB koordinatları ve ölçekle** çizilir. Boyut ve konum farkları görüntüde kalır. Görüntüleyici, dokuları ve tamponları gömülü **GLB 2.0** dosyalarını yerelde okur.
+Ajan yerel bir kopyayı kullanabilir veya depoyu GitHub’dan indirip **[AGENTS.md](AGENTS.md)** ile başlayabilir. Rehber onu üretim, eleştirel görsel kontrol, düzeltme ve teslim adımlarından geçirir. Ajan modelleme yöntemini brief’e göre seçer. [Blender’sız Python rehberi](PYTHON_MODEL_GUIDE.md) · [Adım adım Rally örneği](docs/DETAILED_ASSET_EXAMPLE.md)
 
 ## Hızlı başlangıç
 
-**Node.js 22.12+** ve **WebGL 2** destekli bir tarayıcı gerekir. Başlatmak için aşağıdaki komutları proje klasöründe çalıştır.
+Örnek üretici için **Node.js 22.12+** ve **Python 3** kullan.
 
 ```sh
+git clone --depth 1 https://github.com/HakanBabus/ModelCheck.git
+cd ModelCheck
 npm ci
-npm run dev
+python examples/generate_paddle.py --out review/rally-paddle.glb
+npm run --silent inspect -- review/rally-paddle.glb --out review/rally.png
 ```
 
-Vite’ın yazdırdığı adresi aç. Örnek araç hazır yüklenir. Tekerlek hizasını görmek için **Compare versions → Right** seç. Kendi dosyaların için **Open GLB** veya **Open folder** kullan. [Çalışma ekranına bak](docs/workspace.png)
+Komut **`png`** ve **`report`** dosyalarının tam yollarını JSON olarak döndürür. Görseli aç, gerçek ölçü ve geometri sayımlarına rapordan bak. Arka veya alt yüzü yakından kontrol etmek için **`--view back`** ya da **`--view bottom`** kullan. Sürümleri aynı koordinatlarda karşılaştırmak için **`--baseline <önceki.glb>`** ver.
 
-**Auto orbit** kamerayı modelin çevresinde döndürür. Büyük sahnelerde **Fly** ile gez. Bakmak için sürükle, ilerlemek için **WASD**, alçalmak ve yükselmek için **Q/E**, hızlanmak için **Shift** kullan. **Esc** yörünge moduna döndürür. Dokunmatik ekranda yön düğmeleri görünür.
+Render yerelde Chromium, Chrome veya Edge ile çalışır. Chromium kurmak için **`npx playwright install chromium`** çalıştır. Linux’ta sistem kütüphanesi eksikse **`npx playwright install --with-deps chromium`** kullan.
 
-Bir parçaya çift tıklayarak dönüş merkezini oraya al. **Measure** ile seçtiğin iki noktanın doğrusal uzaklığını modelin orijinal birimiyle ölç.
+## Tarayıcıda incele
 
-### Modeli ayrıntılı incele
+GLB dosyanı veya model klasörünü aç. **Auto orbit**, **Fly**, **Measure**, **Section**, **Motion** ve **Pin** ile modeli incele. **Compare versions** iki modeli ortak koordinatlarda çizer. Üretici sürümleri aynı model kimliği ve ayrı revizyon etiketleriyle işaretleyebilir. [Canlı örnek](https://hakanbabus.github.io/ModelCheck/?sample=rally-paddle) · [Sürüm etiketleri](PYTHON_MODEL_GUIDE.md#record-which-model-the-versions-belong-to)
 
-- **Section** ile X, Y veya Z ekseninde kesit al. Kesitin yerini kaydırıcıyla değiştir, görünen tarafı **Flip side** ile çevir.
-- **Motion**, GLB animasyon içerdiğinde görünür. Klibi oynat, zaman çizelgesinde istediğin ana git veya 1/30 saniyelik adımlarla ilerle. Sensörün hareketini denemek için örneklerden **rover-motion.glb** dosyasını aç. [Kesiti ve zaman çizelgesini gör](docs/motion-section.png)
-- **Pin** ile model üzerindeki bir noktaya not bırak. İşarete veya nota tıklayınca kamera o noktayı dönüş merkezi yapar. **Save pins** notları o GLB dosyasına bağlı bir JSON olarak kaydeder. **Load pins** kaydedilmiş notları mevcut incelemeye ekler.
+**Save current view** açık olan kesiti veya animasyon pozunu kaydeder. Dört açılı inceleme ve karşılaştırma tam modeli başlangıç pozunda gösterir. **`npm run dev`** ile yerel görüntüleyiciyi açabilir, **`npm run build`** ile **`dist/`** altında statik siteyi oluşturabilirsin.
 
-**Save current view** ekrandaki kesiti veya animasyon pozunu kaydeder. Dört açılı inceleme PNG’si ve karşılaştırmalar tam modeli başlangıç pozunda gösterir. Nokta notları inceleme bağlantısıyla veya ayrı JSON dosyasıyla taşınır.
-
-## Ajan akışı
-
-Ajan Python ile GLB üretir, görüntüyü alır ve kendi görsel okuma aracıyla PNG’yi inceler. Python kodunu değiştirdikten sonra yeni sürümü referans modelle yan yana render edip sonucu kontrol eder.
+## Etkileşimli inceleme paylaş
 
 ```sh
-npx playwright install chromium
-npm run --silent inspect -- public/rover.glb --baseline public/rover-raised.glb --view right --out review/rover-comparison.png
+npm run --silent share -- review/rally-paddle.glb --title "Rally incelemesi"
 ```
 
-Komut, **`png`** ve **`report`** dosyalarının tam yollarını JSON olarak yazdırır. Raporda geometri sayımları, sınır ölçüleri ve dosya özetleri bulunur. Referans model verildiğinde farklar **yeni sürüm eksi referans** olarak hesaplanır. Render yerelde çalışır ve API anahtarı gerektirmez.
-
-Karşılaştırma ekranı, üreticinin yazdığı **model kimliklerinin** eşleştiğini, farklı olduğunu ya da bulunmadığını gösterir. Karşılaştırılacak referansı sen veya ajan seçer. [Sürüm etiketleme rehberi](PYTHON_MODEL_GUIDE.md#record-which-model-the-versions-belong-to)
-
-| Parametre | Ne işe yarar? |
-| --- | --- |
-| **`--baseline <dosya.glb>`** | Önceki sürümle karşılaştırır. Parametreyi çıkarırsan tek modeli inceler. |
-| **`--view <açı>`** | `sheet` (dört açı), `front`, `right`, `top` veya `iso` görünümünü seçer. |
-| **`--size <px>`** | PNG genişliğini 480–2400 piksel arasında ayarlar. |
-| **`--out <dosya.png>`** / **`--report <dosya.json>`** | Çıktı yollarını belirler. JSON, varsayılan olarak PNG dosyasının adını `.json` uzantısıyla alır. |
-
-Linux’ta tarayıcı sistem kütüphaneleri eksikse `npx playwright install --with-deps chromium` çalıştır. Kurulu Edge’i kullanmak için **`--browser msedge`** ekle.
-
-## İnceleme bağlantısı paylaş
-
-Ajan çıktısını kontrol ettikten sonra etkileşimli bir inceleme bağlantısı hazırlayabilir. Kullanıcı bağlantıyı açtığında güncel modeli, varsa referans sürümü ve kısa notu görür.
-
-```sh
-npm run --silent share -- public/rover.glb --baseline public/rover-raised.glb --title "Keşif aracı" --note "Sağ görünüşten arka tekerleği kontrol et."
-```
-
-JSON’daki **`url`** aynı bilgisayarda açılır. Sunucu bir saat kullanılmadığında kapanır. Başka cihazlardan açılacak bir adres için **`--static`** ile oluşturulan **`directory`** klasörünü statik bir sunucuda yayınla ve o adresi paylaş. Klasör seçilen GLB’lerin kopyalarını içerir.
-
-Güncel GLB’nin kayıtlı nokta notlarını eklemek için **`--pins review/rover-pins.json`** kullan. Komut, bağlantıyı oluşturmadan önce not dosyasının GLB ile eşleştiğini doğrular.
-
-## Rehberler ve geliştirme
-
-- [**Python model rehberi**](PYTHON_MODEL_GUIDE.md) — Blender kullanmadan Python ile GLB üret. Çalıştırılabilir örneklerle modele uygun yöntemleri seç, çıktıdaki sorunları bul ve kaynak kodda düzelt.
-- [**Ajan talimatları**](AGENTS.md) — Model üretme, inceleme ve düzeltme döngüsünde CLI’ı veya tarayıcı API’sini kullan.
-
-```sh
-npm run build
-npm test
-npm run preview
-```
-
-Üretim derlemesi **`dist/`** klasörüne yazılır. Testler kesitleri, animasyonları, nokta notlarını, inceleme bağlantılarını ve tarayıcı ile CLI’ın aynı PNG’yi üretmesini kontrol eder. Edge ile test etmek için **`MODELCHECK_BROWSER=msedge`** ayarla. Statik görüntüleyiciyi GitHub Pages’te barındırmak için **Settings → Pages → Source** alanını **GitHub Actions** olarak ayarla ve **Deploy demo to Pages** akışını çalıştır.
+JSON’daki **`url`** modeli aynı bilgisayarda açar. Sunucu bir saat kullanılmadığında kapanır. Karşılaştırma için **`--baseline`**, kayıtlı nokta notları için **`--pins`** ekle. Başka cihazdan erişim için **`--static`** ile oluşturulan **`directory`** klasörünü erişilebilir bir sunucuda yayınla. Klasör seçilen GLB’lerin kopyalarını içerir.
 
 [MIT lisansı](LICENSE)

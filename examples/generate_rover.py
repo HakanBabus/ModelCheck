@@ -76,7 +76,7 @@ def box(width, height, depth, bevel):
 
 
 class Model:
-    def __init__(self, asset_id=None, revision=None):
+    def __init__(self, asset_id=None, revision=None, palette=PALETTE):
         self.data = bytearray()
         self.doc = {
             "asset": {"version": "2.0", "generator": "ModelCheck Python example"},
@@ -84,7 +84,7 @@ class Model:
             "bufferViews": [], "accessors": [],
             "materials": [{"name": name, "pbrMetallicRoughness": {
                 "baseColorFactor": color, "metallicFactor": metal,
-                "roughnessFactor": roughness}} for name, color, metal, roughness in PALETTE],
+                "roughnessFactor": roughness}} for name, color, metal, roughness in palette],
         }
         if asset_id:
             identity = {"assetId": asset_id}
@@ -94,7 +94,7 @@ class Model:
 
     def accessor(self, values, layout, bounds=False):
         offset = len(self.data)
-        formats = {"VEC3": ("<3f", 5126), "VEC4": ("<4f", 5126),
+        formats = {"VEC2": ("<2f", 5126), "VEC3": ("<3f", 5126), "VEC4": ("<4f", 5126),
                    "seconds": ("<f", 5126), "indices": ("<H", 5123)}
         packing, component = formats[layout]
         if layout.startswith("VEC"):
@@ -115,11 +115,13 @@ class Model:
         self.doc["accessors"].append(entry)
         return len(self.doc["accessors"]) - 1
 
-    def part(self, name, geometry, center, material, rotation=None):
+    def part(self, name, geometry, center, material, rotation=None, uvs=None):
         positions, normals, indices = geometry
         primitive = {"attributes": {"POSITION": self.accessor(positions, "VEC3", True),
                                       "NORMAL": self.accessor(normals, "VEC3")},
                      "indices": self.accessor(indices, "indices"), "material": material}
+        if uvs is not None:
+            primitive["attributes"]["TEXCOORD_0"] = self.accessor(uvs, "VEC2")
         mesh = len(self.doc["meshes"])
         self.doc["meshes"].append({"name": name, "primitives": [primitive]})
         node = {"name": name, "mesh": mesh, "translation": center}
@@ -127,6 +129,19 @@ class Model:
             node["rotation"] = rotation
         self.doc["scenes"][0]["nodes"].append(len(self.doc["nodes"]))
         self.doc["nodes"].append(node)
+
+    def texture(self, data):
+        offset = len(self.data)
+        self.data.extend(data)
+        views = self.doc["bufferViews"]
+        view = len(views)
+        views.append({"buffer": 0, "byteOffset": offset, "byteLength": len(data)})
+        self.data.extend(b"\x00" * (-len(self.data) % 4))
+        images = self.doc.setdefault("images", [])
+        images.append({"bufferView": view, "mimeType": "image/png"})
+        textures = self.doc.setdefault("textures", [])
+        textures.append({"source": len(images) - 1})
+        return {"index": len(textures) - 1}
 
     def write(self, path):
         self.doc["buffers"] = [{"byteLength": len(self.data)}]

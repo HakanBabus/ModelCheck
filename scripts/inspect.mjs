@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { launchBrowser, startIsolatedSite } from './local-browser.mjs';
+import { CAPTURE_VIEWS } from '../src/views.js';
 
 const HELP = `ModelCheck
 Usage: npm run inspect -- <model.glb> [options]
@@ -10,9 +11,9 @@ Usage: npm run inspect -- <model.glb> [options]
   --baseline <file.glb>  Compare against an earlier version using shared coordinates
   --out <path.png>      Default: review/<name>-review.png or review/<name>-comparison.png
   --report <path.json>  Default: the PNG path with a .json suffix
-  --view <view>         sheet | front | right | top | iso (default: sheet)
+  --view <view>         sheet | iso | front | right | top | back | bottom (default: sheet)
   --size <px>           PNG width, integer 480–2400 (default: 1200)
-  --browser <channel>   Optional installed browser, e.g. msedge or chrome
+  --browser <channel>   Override automatic browser selection, e.g. msedge or chrome
   --help                Show this help
 
 Use npm run --silent inspect for JSON-only stdout.`;
@@ -44,7 +45,7 @@ async function inspect() {
   }
   const view = values.view;
   const size = Number(values.size);
-  if (!['sheet', 'front', 'right', 'top', 'iso'].includes(view)) throw new Error('Invalid --view.');
+  if (!CAPTURE_VIEWS.includes(view)) throw new Error('Invalid --view.');
   if (!Number.isInteger(size) || size < 480 || size > 2400) throw new Error('--size must be an integer from 480 to 2400.');
   const input = resolve(positionals[0]);
   const name = basename(input);

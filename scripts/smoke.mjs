@@ -311,6 +311,16 @@ try {
   });
   await ready();
   assert.equal(await page.locator('h1').textContent(), 'dropped.glb');
+
+  await page.goto(`${site.url}?sample=rally-paddle`);
+  await ready();
+  assert.equal(await page.locator('h1').textContent(), 'rally-paddle.glb');
+  await page.getByRole('button', { name: 'Compare versions' }).click();
+  await page.locator('#comparison-identity[data-identity="matching-id"]:visible').waitFor();
+  assert.match(await page.locator('#comparison-identity').textContent(), /v1.*v2/);
+  await page.getByLabel('View', { exact: true }).selectOption('bottom');
+  await page.waitForFunction(() => document.querySelector('#comparison-image').naturalHeight === 460);
+  await page.keyboard.press('Escape');
   assert.deepEqual(pageErrors, []);
 
   const output = join(temp, 'review space', 'model.png');
@@ -321,9 +331,12 @@ try {
   assert.equal(report.model.triangles, sampleData.triangles);
   assert.equal(report.capture.width, 1200);
   assert.deepEqual(await readFile(output), browserPng);
-  const isolated = join(temp, 'top.png');
-  await run(process.execPath, ['scripts/inspect.mjs', sample, '--out', isolated, '--view', 'top', '--size', '640']);
-  assert.deepEqual(sizeOfPng(await readFile(isolated)), [640, 457]);
+  const back = join(temp, 'back.png');
+  const backCapture = JSON.parse((await run(process.execPath, [
+    'scripts/inspect.mjs', 'public/rally-paddle.glb', '--out', back, '--view', 'back', '--size', '640',
+  ])).stdout);
+  assert.equal(backCapture.view, 'back');
+  assert.deepEqual(sizeOfPng(await readFile(back)), [640, 457]);
   const comparisonOutput = join(temp, 'compare.png');
   const cliComparison = JSON.parse((await run(process.execPath, [
     'scripts/inspect.mjs', sample, '--baseline', baseline, '--view', 'right', '--out', comparisonOutput,

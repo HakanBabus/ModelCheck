@@ -1,29 +1,30 @@
-# ModelCheck for coding agents
+# Create and review an asset with ModelCheck
 
-## Inspect generated models
+When a user asks you to make or revise a 3D asset with ModelCheck, carry the job through **Python source → GLB → visual critique → revised GLB → delivery**. Run the workflow yourself when you have the tools. The viewer also works on an existing GLB when the user asks for inspection only.
 
-1. Install dependencies with `npm ci` and provision Chromium with `npx playwright install chromium`. On Linux the browser may also require system libraries (`npx playwright install --with-deps chromium`). An installed Edge can be used with `--browser msedge`.
-2. Translate the brief into dimensions, axes, and visual checks. The [Python model guide](PYTHON_MODEL_GUIDE.md) covers a Blender-free workflow with worked examples and ways to diagnose export defects. Pick and combine Python geometry techniques and exporters to suit the asset. Save a self-contained GLB. Reuse the generator's stable **`assetId`** and update its **`revision`** for each export when the writer supports **`asset.extras.modelcheck`**.
-3. Run `npm run --silent inspect -- "path/to/model.glb" --out review/model.png`. Parse the JSON object on stdout and open the returned **`png`** path with your image-viewing tool. Read the JSON file at **`report`** for bounds and geometry counts.
-4. Inspect the model against the brief. For alignment and symmetry, compare the orthographic **Front (+Z)**, **Right (+X)** and **Top (+Y)** panels. Use the ¾ panel for silhouette and depth. To get a larger single view, rerun with `--view right --size 1600`, for example.
-5. When the image shows a discrepancy, change the source generator and export a fresh GLB. Run `npm run --silent inspect -- revised.glb --baseline original.glb --out review/comparison.png` and open the returned PNG. The baseline is on the left and the revised model is on the right. They share a camera and GLB coordinates, so a moved origin or changed scale is visible. Check **`identityStatus`** and verify the pairing from the brief or source history if the IDs differ or are missing. Report what changed and what you verified.
+## Start from the request
 
-The command uses the rest pose and centered camera framing. Use the JSON bounds for exact GLB coordinates. The sheet helps check visible geometry. Use **Section** in the browser to expose inner surfaces, **Motion** to inspect animation clips, and geometry checks to assess properties such as watertightness and topology.
+- Reuse a local checkout or clone **`https://github.com/HakanBabus/ModelCheck.git`** to a work directory. Read [the Python guide](PYTHON_MODEL_GUIDE.md). Run **`npm ci`** in the ModelCheck checkout. The CLI tries Playwright Chromium and installed Chrome or Edge. If it reports that no browser is available, use **`npx playwright install chromium`** or configure an installed channel with **`--browser`**.
+- Identify the intended role, reference style and viewing distance. Look for the target project's units, axes, pivot, naming and asset folder. Treat unspecified details as design choices and proceed with sensible assumptions. Use only reference material the user has supplied or authorized for the job.
+- Generate a self-contained GLB with a Python technique that serves the asset. For a detailed prop, consider the silhouette, construction, material separation and close-up surfaces at the intended viewing distance. Preserve editable source and any dependencies. [Worked asset example](docs/DETAILED_ASSET_EXAMPLE.md)
 
-## Send the user a review link
+## Open the render and critique it
 
-After inspecting the model, run `npm run --silent share -- revised.glb --baseline original.glb --title "Model review" --note "What to check"`. Omit the baseline for a single model. The **`url`** opens the 3D review directly from the same computer, and the server closes after one idle hour. Verify that it opens before sending it. Keep the review directory while the link is in use.
+Run from the ModelCheck checkout. Give absolute paths for outputs in another project.
 
-To point out a specific surface, use **Pin** in the browser, then **Save pins**. Add **`--pins <pins.json>`** to the share command. Pins are matched to the exact bytes of the current GLB and stored in the review manifest.
+```sh
+npm run --silent inspect -- "/path/to/draft.glb" --out "/path/to/review/draft.png"
+```
 
-For a user on another device, use **`--static`** and publish the returned **`directory`** to a host the user can reach, with the user's authorization for the files and audience. The directory contains the chosen GLBs and the viewer. Share the resulting hosted address after verifying it. Static generation returns **`url: null`** until you supply hosting.
+Open the returned **`png`** with your image tool and read **`report`**. A successful export and matching bounds are only the beginning of the review. Judge the image critically against the brief and references.
 
-## Drive the browser directly
+- Look for the most consequential problems first. Check silhouette and proportions, joins and clearances, bevels and shading, material separation, and whether small details hold up at the intended camera distance. Look for floating parts, overlaps, distorted textures, odd highlights and accidental asymmetry.
+- Name the issue, the view that exposes it, and the source change that would address it. For example, “Front shows the grip drifting to the right of the blade. Center the grip group, keep the pivot, and re-export.” Use a larger render such as **`--view iso --size 1600`** or inspect **`--view back`** and **`--view bottom`**.
+- Edit the generator, export to a distinct path, and inspect again. When the visual difference matters, pass **`--baseline "/path/to/draft.glb"`** and open the resulting comparison. Keep the same **`assetId`** for that asset and advance **`revision`** if the exporter supports **`asset.extras.modelcheck`**. The caller selects the baseline. Confirm the relationship from source history if the report cannot establish matching IDs.
+- Stop when the asset meets the visible and measurable requirements, or report the specific remaining issue. Ground praise and criticism in what you actually saw. Check motion, hidden geometry, collision or texture fidelity separately when they matter. If image viewing is unavailable, report the checks you performed and leave visual acceptance open.
 
-Run `npm run dev` or open the static site. A browser automation client can use **Open GLB** or set the **`#files`** file-input value via its file picker API. Wait for **`#state[data-phase="ready"]`**, or read **`#stage-message`** if the phase is **`error`**. Click **Download review PNG** and wait for the download. Use **`?automation`** to skip the default sample.
+## Deliver the asset
 
-For a pose or cutaway, set **Animation clip** or **Section axis**, adjust **Animation time** or **Cut position**, then click **Save current view**. The four-view PNG and comparisons always use the full model in its rest pose.
+Put the final GLB in the requested project location when available. Keep drafts, screenshots and reports outside the runtime asset directory unless the project uses them there. Provide the generator and any files it needs to reproduce the asset. If the request names a target application, verify the final import when its tooling is available and report what ran.
 
-In the page context, **`window.modelCheck.open(file)`** accepts a browser **`File`** object and returns the model report. **`window.modelCheck.capture({view: 'sheet', size: 1200})`** returns a PNG **`Blob`**. **`window.modelCheck.report()`** returns the report for the ready model or `null`. For normal local agent use, the CLI handles browser setup and saving both artifacts.
-
-For a comparison, call **`window.modelCheck.compare(baselineFile, {view: 'right', size: 1200})`** after opening the revised model. It returns **`image`** as a PNG Blob, **`baseline`** and **`candidate`** model data, **`delta`** (candidate minus baseline), **`framing`** and **`identityStatus`**. The CLI keeps the revised report in **`model`** and adds the comparison fields when `--baseline` is present.
+Give the user the **GLB**, an **inspection image** and a short summary of what changed and what was checked. For interactive review, **`npm run --silent share -- final.glb`** returns a local URL. Use **`--baseline`** or **`--pins`** for a comparison or point notes when useful. A review for another device needs an authorized host and **`--static`**. [Sharing and viewer tools](README.md#share-an-interactive-review)

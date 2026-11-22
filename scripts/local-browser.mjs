@@ -14,7 +14,7 @@ export async function startIsolatedSite() {
   const outDir = await mkdtemp(join(tmpdir(), 'modelcheck-viewer-'));
   const clean = () => rm(outDir, { recursive: true, force: true });
   try {
-    await build({ build: { outDir, emptyOutDir: true }, logLevel: 'silent' });
+    await build({ publicDir: false, build: { outDir, emptyOutDir: true }, logLevel: 'silent' });
     const site = await startSite(outDir);
     return {
       url: site.url,
@@ -28,6 +28,17 @@ export async function startIsolatedSite() {
   }
 }
 
-export function launchBrowser(channel = process.env.MODELCHECK_BROWSER || undefined) {
-  return chromium.launch({ channel, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+export async function launchBrowser(channel = process.env.MODELCHECK_BROWSER || undefined) {
+  const args = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
+  if (channel) return chromium.launch({ channel, args });
+
+  const installed = process.platform === 'win32' ? ['msedge', 'chrome'] : ['chrome', 'msedge'];
+  for (const candidate of [undefined, ...installed]) {
+    try {
+      return await chromium.launch({ channel: candidate, args });
+    } catch (error) {
+      if (!/Executable doesn't exist|Chromium distribution '.+' is not found/.test(error.message)) throw error;
+    }
+  }
+  throw new Error('No Chromium browser found. Run npx playwright install chromium from ModelCheck.');
 }

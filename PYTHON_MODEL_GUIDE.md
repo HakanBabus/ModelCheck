@@ -2,6 +2,8 @@
 
 This guide takes you from a brief to a reviewable 3D asset using **Python and a self-contained GLB**. The examples generate geometry, materials and scene structure with the Python standard library. The entire workflow runs without Blender. ModelCheck renders the result so a coding agent can inspect it, revise the generator and share the finished asset.
 
+For the agent's workflow from user brief to delivery, start with **[AGENTS.md](AGENTS.md)**. For a textured prop with a visible correction, open **[the Rally paddle example](docs/DETAILED_ASSET_EXAMPLE.md)**.
+
 ## Turn the brief into parameters
 
 Translate the brief into the geometry the viewer should recognize. Identify the **silhouette, proportions, contact points, openings and moving parts** that define the asset. Give exact requirements named parameters. For a display stand, that might be **1.6 m wide, 1.2 m high and 0.8 m deep**, centered on **X** and **Z**, with its base on **Y = 0**. Derive post positions from the platform width so a revision keeps the design coherent.
@@ -28,6 +30,14 @@ Combine approaches freely and replace the sample writer if another Python export
 - **Shading and materials.** Match normals to the shape. Smooth a curved span and give intentional creases their own normals. Use roughness, metalness and color to distinguish materials at the same lighting angle. Check the highlights in the rendered GLB.
 - **Export and scale.** Keep the origin useful for placement or animation. glTF uses **+Y up, +Z forward, and meters**. Keep scale and origin consistent across revisions. Embed buffers and textures in the GLB, and use compatible UV and material data if the brief calls for textures. [glTF coordinate system and units](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#coordinate-system-and-units)
 
+### Decide which details need geometry
+
+Study the references at two scales. At the intended viewing distance, look at silhouette, proportions and large material breaks. Up close, look for how parts join, how thick they are, where the edges catch light, and how each surface reflects it.
+
+Use **geometry** where a feature changes the outline, exposes thickness or casts a visible shadow. Examples include a recessed rim, layers visible on an edge, or a grip that flares at the base. Use **textures** for surface marks, grain and patterns. A small normal map can make a close-up surface feel less flat, and roughness can distinguish worn, polished and matte regions within the same color. Use planar, cylindrical, swept or custom UVs as the shape warrants. Pay attention to texture scale, seams and directional grain.
+
+Decide where the time and detail budget matter most. A close-up hero prop may justify layered geometry and multiple maps. A distant object may only need a convincing profile and a few material breaks. The Rally example makes its veneer and sponge real layers and puts the fine rubber pattern in embedded textures.
+
 ## Review what the GLB actually contains
 
 With the [ModelCheck setup](README.md#quick-start) in place, render a sheet of the exported asset:
@@ -36,7 +46,7 @@ With the [ModelCheck setup](README.md#quick-start) in place, render a sheet of t
 npm run --silent inspect -- review/model.glb --out review/model.png
 ```
 
-Open the **`png`** path from stdout with your image tool. Read the **`report`** path for bounds, counts and animation names. In a ¾ view, check how the main forms read together. Use the front, right and top views for symmetry, clearance or alignment. For details that need more pixels, render a single view such as **`--view right --size 1600`** or orbit and zoom in the browser.
+Open the **`png`** path from stdout with your image tool. Scrutinize it against the brief before accepting the asset. Ask where the proportions, joins, textures or roughness make it look unfinished. Read the **`report`** path for bounds, counts and animation names. In a ¾ view, check how the main forms read together. Use orthographic views for symmetry, clearance and alignment. For hidden sides, use **`--view back`** or **`--view bottom`**. Render a larger single view such as **`--view right --size 1600`** when a detail is too small.
 
 | What you observe | Where to look in the generator |
 | --- | --- |
@@ -48,7 +58,7 @@ Open the **`png`** path from stdout with your image tool. Read the **`report`** 
 
 Use geometry checks when the brief calls for them. For a printable shell, check watertightness, self-intersections and minimum wall thickness. For a game prop, prioritize the triangle and texture budgets and check that the expected UVs, materials and pivots survive export. For motion, review the relevant poses, clearances and loop transition.
 
-Fix the source, export a distinct revision, and verify the change in the GLB. Keep the **Python source**, **final GLB** and **review image** together so the next person or agent can reproduce the result. Share the interactive viewer when the reviewer needs to explore it from additional angles. [Agent review workflow](AGENTS.md#send-the-user-a-review-link)
+For each material problem you see, note the view, the visual evidence and the change to make. Fix the source, export a distinct revision, and open the new render or comparison to verify the result. Keep the **Python source**, **final GLB** and **review image** together so the next person or agent can reproduce the result. [Agent handoff](AGENTS.md#deliver-the-asset)
 
 ## Build a parametric stand
 

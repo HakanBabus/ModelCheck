@@ -4,7 +4,8 @@ import {
   Ruler, Scan, Search, ShieldCheck, SkipBack, SkipForward, Slice, X, createIcons,
 } from 'lucide';
 import { PinEditor, readPins } from './pin-editor.js';
-import { Viewer, VIEWS } from './viewer.js';
+import { Viewer } from './viewer.js';
+import { CAPTURE_VIEWS } from './views.js';
 import './style.css';
 
 const $ = (id) => document.getElementById(id);
@@ -420,7 +421,7 @@ function showComparisonIdentity(comparison) {
 }
 
 function checkCaptureOptions(view, size, allowCurrent = false) {
-  if (!['sheet', ...Object.keys(VIEWS)].includes(view) && !(allowCurrent && view === 'current')) {
+  if (!CAPTURE_VIEWS.includes(view) && !(allowCurrent && view === 'current')) {
     throw new Error('Unknown camera view.');
   }
   if (!Number.isInteger(size) || size < 480 || size > 2400) throw new Error('Size must be 480–2400 pixels.');
@@ -769,6 +770,11 @@ try {
       $('model-title').textContent = 'Review unavailable';
       state('Error', error.message);
     });
+  } else if (new URLSearchParams(location.search).get('sample') === 'rally-paddle') {
+    setModelPair(
+      staticEntry('rally-paddle.glb', 'Centered grip and fitted rubber'),
+      staticEntry('rally-paddle-draft.glb', 'Offset grip and rounded rubber edge'),
+    );
   } else {
     setModelPair(staticEntry('rover.glb', 'Aligned wheels'), staticEntry('rover-raised.glb', 'Raised rear wheel'), [
       staticEntry('rover-motion.glb', 'Sensor sweep and tilt'),
