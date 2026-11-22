@@ -7,12 +7,12 @@ from pathlib import Path
 from generate_rover import Model, box
 
 
-def make_stand(width, height, depth):
+def make_stand(width, height, depth, revision=None):
     """Keep the bottom at Y=0 and center the stand around X=Z=0."""
     thickness = min(width, height, depth) * 0.12
     bevel = thickness * 0.15
     post_height = height - 2 * thickness
-    model = Model()
+    model = Model("modelcheck:stand", revision)
 
     def part(name, dimensions, center, material):
         model.part(name, box(*dimensions, bevel), center, material)
@@ -37,7 +37,8 @@ if __name__ == "__main__":
     parser.add_argument("--width", type=positive_dimension, default=1.6, help="X dimension")
     parser.add_argument("--height", type=positive_dimension, default=1.2, help="Y dimension")
     parser.add_argument("--depth", type=positive_dimension, default=0.8, help="Z dimension")
+    parser.add_argument("--revision", help="Revision label to write into the GLB")
     parser.add_argument("--out", type=Path, default=Path("review/stand.glb"))
     args = parser.parse_args()
-    make_stand(args.width, args.height, args.depth).write(args.out)
+    make_stand(args.width, args.height, args.depth, args.revision).write(args.out)
     print(args.out)

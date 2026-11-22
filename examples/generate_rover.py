@@ -76,7 +76,7 @@ def box(width, height, depth, bevel):
 
 
 class Model:
-    def __init__(self):
+    def __init__(self, asset_id=None, revision=None):
         self.data = bytearray()
         self.doc = {
             "asset": {"version": "2.0", "generator": "ModelCheck Python example"},
@@ -86,6 +86,11 @@ class Model:
                 "baseColorFactor": color, "metallicFactor": metal,
                 "roughnessFactor": roughness}} for name, color, metal, roughness in PALETTE],
         }
+        if asset_id:
+            identity = {"assetId": asset_id}
+            if revision:
+                identity["revision"] = revision
+            self.doc["asset"]["extras"] = {"modelcheck": identity}
 
     def accessor(self, values, vector, bounds=False):
         offset = len(self.data)
@@ -131,7 +136,7 @@ class Model:
 
 
 def make_rover(raised_wheel):
-    model = Model()
+    model = Model("modelcheck:rover", "v1" if raised_wheel else "v2")
 
     def block(name, size, center, color, bevel=.055):
         model.part(name, box(*size, bevel), center, color)

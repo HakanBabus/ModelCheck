@@ -40,6 +40,7 @@ try {
   assert.equal(sampleData.meshes, 88);
   assert.equal(sampleData.triangles, 5584);
   assert.equal(sampleData.materials, 5);
+  assert.deepEqual(sampleData.identity, { assetId: 'modelcheck:rover', revision: 'v2' });
 
   await page.locator('#folder').setInputFiles(folder);
   await ready();
@@ -81,11 +82,58 @@ try {
   if (process.env.MODELCHECK_DESKTOP_SCREENSHOT) {
     await page.screenshot({ path: process.env.MODELCHECK_DESKTOP_SCREENSHOT, fullPage: true });
   }
+  const canvas = page.locator('#stage canvas');
+  const initialFrame = await canvas.screenshot();
+  await page.getByRole('button', { name: 'Auto orbit' }).click();
+  await page.waitForTimeout(400);
+  assert.equal(await page.locator('#turntable').getAttribute('aria-pressed'), 'true');
+  assert.notDeepEqual(await canvas.screenshot(), initialFrame);
+  await page.getByRole('button', { name: 'Fly', exact: true }).click();
+  assert.equal(await page.locator('#stage').getAttribute('data-navigation'), 'fly');
+  assert.equal(await page.locator('#turntable').getAttribute('aria-pressed'), 'false');
+  assert(await page.getByLabel('Fly speed').isVisible());
+  await page.getByLabel('Fly speed').selectOption('3');
+  assert(await canvas.evaluate((element) => document.activeElement === element));
+  const flyStart = await canvas.screenshot();
+  await page.keyboard.down('KeyW');
+  await page.waitForTimeout(350);
+  await page.keyboard.up('KeyW');
+  assert.notDeepEqual(await canvas.screenshot(), flyStart);
+  const beforeLook = await canvas.screenshot();
+  const area = await canvas.boundingBox();
+  await page.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(area.x + area.width / 2 + 80, area.y + area.height / 2 + 30, { steps: 4 });
+  await page.mouse.up();
+  assert.notDeepEqual(await canvas.screenshot(), beforeLook);
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('#stage').getAttribute('data-navigation'), 'orbit');
+
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.getByRole('button', { name: 'Prepare agent task' }).click();
+  const handoff = page.getByRole('dialog', { name: 'Prepare agent task' });
+  const task = handoff.getByLabel('Task preview');
+  assert.match(await task.inputValue(), /public\/rover\.glb.*--baseline.*public\/rover-raised\.glb/);
+  await handoff.getByLabel('What should it check?', { exact: false }).fill('Check wheel clearance');
+  assert.match(await task.inputValue(), /Review target: Check wheel clearance/);
+  await handoff.getByLabel('Current GLB path').fill("models/Rover's $body.glb");
+  assert((await task.inputValue()).includes("'models/Rover''s $body.glb'"));
+  await handoff.getByLabel('Shell', { exact: true }).selectOption('bash');
+  assert((await task.inputValue()).includes("'models/Rover'\\''s $body.glb'"));
+  await handoff.getByRole('button', { name: 'Copy agent task' }).click();
+  await handoff.getByText('Agent task copied.').waitFor();
+  const clipboard = await page.evaluate(() => navigator.clipboard.readText());
+  assert.equal(clipboard.replaceAll('\r\n', '\n'), await task.inputValue());
+  await handoff.getByRole('button', { name: 'Close agent task' }).click();
+  const guideUrl = new URL(await page.locator('#python-guide').getAttribute('href'), page.url());
+  assert((await page.request.get(guideUrl.href)).ok());
+
   await page.getByRole('button', { name: 'Compare versions' }).click();
   const comparisonDialog = page.getByRole('dialog', { name: 'Compare versions' });
   const comparisonImage = comparisonDialog.locator('#comparison-image');
   const sheetReady = () => page.waitForFunction(() => document.querySelector('#comparison-image').naturalHeight === 1624);
   await sheetReady();
+  assert.match(await comparisonDialog.locator('#comparison-identity').textContent(), /Matching model IDs.*v1.*v2/);
   assert.equal(await comparisonDialog.getByLabel('Baseline', { exact: true }).inputValue(), '1');
   await comparisonDialog.getByLabel('View', { exact: true }).selectOption('right');
   await page.waitForFunction(() => document.querySelector('#comparison-image').naturalHeight === 460);
@@ -102,6 +150,7 @@ try {
   assert.deepEqual(compared.candidate, sampleData);
   assert.equal(compared.baseline.name, 'rover-raised.glb');
   assert.equal(compared.framing, 'shared-glb-coordinates');
+  assert.equal(compared.identityStatus, 'matching-id');
   assert.deepEqual(compared.delta.bounds.size, [0, 0, 0]);
 
   await page.locator('#baseline-file').setInputFiles({
@@ -109,6 +158,21 @@ try {
   });
   await page.waitForFunction(() => document.querySelector('#comparison-status').textContent.includes('too small'));
   assert(await comparisonDialog.getByRole('button', { name: 'Download comparison PNG' }).isDisabled());
+  const sourceBaseline = await readFile(baseline);
+  for (const [from, to, status] of [
+    ['modelcheck:rover', 'modelcheck:other', 'different-ids'],
+    ['"modelcheck":', '"legacyflag":', 'unrecorded'],
+  ]) {
+    const changed = Buffer.from(sourceBaseline);
+    const start = changed.indexOf(from);
+    assert(start >= 0 && from.length === to.length);
+    changed.write(to, start);
+    await page.locator('#baseline-file').setInputFiles({
+      name: 'custom-baseline.glb', mimeType: 'model/gltf-binary', buffer: changed,
+    });
+    await comparisonDialog.locator(`#comparison-identity[data-identity="${status}"]:visible`).waitFor();
+    await comparisonImage.waitFor({ state: 'visible' });
+  }
   await page.locator('#baseline-file').setInputFiles(baseline);
   await comparisonImage.waitFor({ state: 'visible' });
   await page.keyboard.press('Escape');
@@ -165,11 +229,12 @@ try {
   const comparisonReport = JSON.parse(await readFile(cliComparison.report, 'utf8'));
   assert.deepEqual(comparisonReport.delta, compared.delta);
   assert.equal(comparisonReport.framing, compared.framing);
+  assert.equal(comparisonReport.identityStatus, compared.identityStatus);
   assert.match(comparisonReport.baseline.sha256, /^[0-9a-f]{64}$/);
   assert.notEqual(comparisonReport.baseline.sha256, comparisonReport.model.sha256);
   assert.deepEqual(await readFile(comparisonOutput), comparedPng);
   await assert.rejects(run(process.execPath, ['scripts/inspect.mjs', sample, '--size', '399']), /size must/);
-  console.log('Passed: browser and CLI captures, comparison exports and parity, invalid-file recovery, library, and mobile layout.');
+  console.log('Passed: camera modes, agent handoff, revision identity, browser and CLI capture parity, recovery, library, and mobile layout.');
 } finally {
   try { await browser?.close(); } finally {
     try { await site?.close(); } finally { await rm(temp, { recursive: true, force: true }); }

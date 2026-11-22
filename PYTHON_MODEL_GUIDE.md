@@ -13,7 +13,7 @@ Use pure Python for basic procedural geometry. Use **Blender Python** when you n
 After following the setup in the [README](README.md), run this from the repository root:
 
 ```sh
-python examples/generate_stand.py --width 1.6 --height 1.2 --depth 0.8 --out review/stand-v1.glb
+python examples/generate_stand.py --width 1.6 --height 1.2 --depth 0.8 --revision v1 --out review/stand-v1.glb
 npm run --silent inspect -- review/stand-v1.glb --out review/stand-v1.png
 ```
 
@@ -24,11 +24,31 @@ npm run --silent inspect -- review/stand-v1.glb --out review/stand-v1.png
 3. When the brief changes, regenerate into a distinct file. Suppose the stand now needs to be **2.0 m wide**. Export the revised model and compare it with the previous one.
 
 ```sh
-python examples/generate_stand.py --width 2.0 --height 1.2 --depth 0.8 --out review/stand-v2.glb
+python examples/generate_stand.py --width 2.0 --height 1.2 --depth 0.8 --revision v2 --out review/stand-v2.glb
 npm run --silent inspect -- review/stand-v2.glb --baseline review/stand-v1.glb --view front --out review/stand-comparison.png
 ```
 
 Check that the revised stand is wider and remains centered in the PNG. Expect **`delta.bounds.size[0]`** to be near **+0.4**, with no change to height, depth, or triangle count. Keep the generator, the final GLB, and a review image for the handoff.
+
+## Record which model the versions belong to
+
+Choose a stable **`assetId`** once per logical asset and keep it in the generator. Change **`revision`** with each meaningful export. If you're editing a generator that already has an ID, carry it forward. For the stand example, both files use **`modelcheck:stand`**, and the commands above label the outputs **`v1`** and **`v2`**.
+
+The sample writer can attach these fields directly. Use your own project prefix and asset name.
+
+```python
+model = Model(asset_id="my-project:display-stand", revision="v2")
+```
+
+In the GLB JSON chunk, the fields live under **`asset.extras.modelcheck`**. The comparison still takes an explicit **baseline**. Read **`identityStatus`** from its JSON and check **`baseline.identity`** and **`model.identity`**:
+
+| Status | What to do |
+| --- | --- |
+| **`matching-id`** | Confirm the revision labels and inspect the intended change. |
+| **`different-ids`** | Confirm that comparing these two assets is intentional. |
+| **`unrecorded`** | Confirm the baseline and current file from the brief or generator history. |
+
+These are labels written by the exporter. Keep the baseline GLB and source revision if you need to reproduce a review later.
 
 ## Run the dependency-free example
 

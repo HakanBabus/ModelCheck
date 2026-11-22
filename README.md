@@ -37,6 +37,8 @@ npm run dev
 
 Open the URL printed by Vite. The sample rover loads automatically. Choose **Compare versions → Right** to see the wheel alignment, or use **Open GLB** or **Open folder** for your own files. [See the workspace](docs/workspace.png)
 
+**Auto orbit** rotates the camera around the active model. Use **Fly** for large scenes. Drag to look, move with **WASD**, use **Q/E** for down/up, hold **Shift** to boost, and press **Esc** to return to orbit. Touchscreens show movement buttons.
+
 ## Agent workflow
 
 Generate a GLB from Python, render it, and have the agent open the PNG with its image tool. After revising the generator, render the new GLB alongside the baseline and inspect the result.
@@ -47,6 +49,8 @@ npm run --silent inspect -- public/rover.glb --baseline public/rover-raised.glb 
 ```
 
 The command prints the absolute **`png`** and **`report`** paths as JSON. The report records geometry counts, bounds, and hashes. With a baseline, it also records **current minus baseline** deltas. Rendering runs locally and requires no API key.
+
+In the browser, **Prepare agent task** builds a copyable prompt and command from the current GLB, optional baseline, and what you want checked. The comparison shows whether the exporter-provided **model IDs** match, differ, or are missing. The baseline is selected explicitly. See [how to tag revisions](PYTHON_MODEL_GUIDE.md#record-which-model-the-versions-belong-to).
 
 | Option | What it controls |
 | --- | --- |

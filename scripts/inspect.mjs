@@ -84,7 +84,9 @@ async function inspect() {
       if (baseline) {
         const result = await window.modelCheck.compare(baseline, options);
         image = result.image;
-        comparison = { baseline: result.baseline, delta: result.delta, framing: result.framing };
+        comparison = {
+          baseline: result.baseline, delta: result.delta, framing: result.framing, identityStatus: result.identityStatus,
+        };
       } else {
         image = await window.modelCheck.capture(options);
       }
@@ -109,6 +111,7 @@ async function inspect() {
       output.baseline = { ...comparison.baseline, sha256: createHash('sha256').update(baselineData).digest('hex') };
       output.delta = comparison.delta;
       output.framing = comparison.framing;
+      output.identityStatus = comparison.identityStatus;
     }
     await writeAtomic(png, image);
     await writeAtomic(json, JSON.stringify(output, null, 2) + '\n');

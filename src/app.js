@@ -1,16 +1,27 @@
-import { Box, Camera, Columns2, Copy, FileJson, FilePlus2, FolderOpen, Grid, Layers, LayoutGrid, Scan, Search, ShieldCheck, SlidersHorizontal, Terminal, X, createIcons } from 'lucide';
+import {
+  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Box, Camera, ChevronsDown, ChevronsUp, ClipboardList,
+  Columns2, Copy, FileJson, FilePlus2, FolderOpen, Grid, Layers, LayoutGrid, Navigation, RotateCw,
+  Scan, Search, ShieldCheck, Terminal, X, createIcons,
+} from 'lucide';
 import { Viewer, VIEWS } from './viewer.js';
+import guideUrl from '../PYTHON_MODEL_GUIDE.md?url';
 import './style.css';
 
 const $ = (id) => document.getElementById(id);
-const icons = { Box, Camera, Columns2, Copy, FileJson, FilePlus2, FolderOpen, Grid, Layers, LayoutGrid, Scan, Search, ShieldCheck, SlidersHorizontal, Terminal, X };
+const icons = {
+  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Box, Camera, ChevronsDown, ChevronsUp, ClipboardList,
+  Columns2, Copy, FileJson, FilePlus2, FolderOpen, Grid, Layers, LayoutGrid, Navigation, RotateCw,
+  Scan, Search, ShieldCheck, Terminal, X,
+};
 const renderIcons = () => createIcons({ icons, attrs: { 'aria-hidden': 'true' } });
 renderIcons();
 
 const stage = $('stage');
 const automation = new URLSearchParams(location.search).has('automation');
 const viewButtons = [...document.querySelectorAll('[data-view]')];
-const modelButtons = [...viewButtons, $('grid'), $('wireframe'), $('fit'), $('sheet'), $('compare'), $('snapshot'), $('report')];
+const modelButtons = [...viewButtons, ...[
+  'grid', 'wireframe', 'fit', 'sheet', 'compare', 'snapshot', 'report', 'fly', 'turntable', 'open-handoff',
+].map($)];
 const format = new Intl.NumberFormat('en', { maximumSignificantDigits: 4 });
 const countFormat = new Intl.NumberFormat('en');
 let viewer;
@@ -18,12 +29,15 @@ let entries = [];
 let activeEntry;
 let report;
 let ticket = 0;
+let navigation = 'orbit';
+let lastBaseline;
 const comparisonDialog = $('comparison');
 const deltaFormat = new Intl.NumberFormat('en', { maximumSignificantDigits: 4, signDisplay: 'exceptZero' });
 let comparisonSession;
 let comparisonImage;
 let comparisonUrl;
 let comparisonRequest = 0;
+$('python-guide').href = guideUrl;
 
 function formatBytes(bytes) {
   if (!bytes) return '0 B';
@@ -40,7 +54,7 @@ function entryForFile(file) {
 
 function bundledEntry(name, detail) {
   return {
-    name, path: name, detail,
+    name, path: name, detail, cliPath: `public/${name}`,
     async read() {
       const response = await fetch(`${import.meta.env.BASE_URL}${name}`);
       if (!response.ok) throw new Error('The built-in model could not be loaded.');
@@ -58,12 +72,28 @@ function state(phase, error = '') {
   for (const button of modelButtons) button.disabled = phase !== 'Ready';
 }
 
+function updateNavigation(mode) {
+  if (navigation === mode) return;
+  navigation = mode;
+  viewer.setNavigation(mode);
+  stage.dataset.navigation = mode;
+  $('turntable').setAttribute('aria-pressed', String(mode === 'turntable'));
+  $('fly').setAttribute('aria-pressed', String(mode === 'fly'));
+  $('fly-hud').hidden = mode !== 'fly';
+  $('speed-control').hidden = mode !== 'fly';
+  $('orbit-hint').hidden = mode === 'fly';
+  if (mode !== 'orbit') setActiveView('');
+}
+
 function setActiveView(view) {
   for (const button of viewButtons) button.setAttribute('aria-pressed', String(button.dataset.view === view));
 }
 
 function showStats() {
   $('stats').replaceChildren();
+  const revision = $('revision-label');
+  revision.hidden = !report?.identity;
+  revision.textContent = report?.identity ? identityLabel(report.identity) : '';
   if (!report) return;
   const rows = [
     ['File size', formatBytes(report.bytes)], ['Meshes', countFormat.format(report.meshes)],
@@ -81,6 +111,10 @@ function showStats() {
     row.append(title, detail);
     $('stats').append(row);
   }
+}
+
+function identityLabel(identity) {
+  return [identity.assetId, identity.revision].filter(Boolean).join(' / ');
 }
 
 function renderLibrary() {
@@ -126,6 +160,8 @@ function renderLibrary() {
 async function select(entry) {
   const version = ++ticket;
   activeEntry = entry;
+  lastBaseline = undefined;
+  updateNavigation('orbit');
   report = null;
   $('model-title').textContent = entry.name;
   state('Loading');
@@ -156,6 +192,8 @@ function importFiles(files, replace) {
     if (files.length) {
       ++ticket;
       activeEntry = undefined;
+      lastBaseline = undefined;
+      updateNavigation('orbit');
       report = null;
       $('model-title').textContent = 'No GLB files found';
       showStats();
@@ -212,6 +250,22 @@ function showComparisonChanges(delta) {
   }
 }
 
+function showComparisonIdentity(comparison) {
+  const panel = $('comparison-identity');
+  panel.hidden = !comparison;
+  if (!comparison) return;
+  const { baseline, candidate, identityStatus } = comparison;
+  panel.dataset.identity = identityStatus;
+  const left = baseline.identity ? identityLabel(baseline.identity) : 'no model ID';
+  const right = candidate.identity ? identityLabel(candidate.identity) : 'no model ID';
+  const status = {
+    'matching-id': 'Matching model IDs',
+    'different-ids': 'Different model IDs',
+    unrecorded: 'Manual pairing',
+  }[identityStatus];
+  panel.textContent = `${status} · Baseline ${left} · Current ${right}`;
+}
+
 function checkCaptureOptions(view, size, allowCurrent = false) {
   if (!['sheet', ...Object.keys(VIEWS)].includes(view) && !(allowCurrent && view === 'current')) {
     throw new Error('Unknown camera view.');
@@ -252,8 +306,12 @@ async function loadComparisonBaseline(entry) {
   comparisonSession = undefined;
   clearComparisonImage();
   showComparisonChanges();
+  showComparisonIdentity();
   $('comparison-status').textContent = entry ? 'Reading baseline…' : 'Pick a baseline from the library or choose a GLB file.';
-  if (!entry) return;
+  if (!entry) {
+    lastBaseline = undefined;
+    return;
+  }
   try {
     const session = await prepareComparison(entry);
     if (request !== comparisonRequest || !comparisonDialog.open) {
@@ -261,7 +319,9 @@ async function loadComparisonBaseline(entry) {
       return;
     }
     comparisonSession = session;
+    lastBaseline = entry;
     showComparisonChanges(session.report.delta);
+    showComparisonIdentity(session.report);
     await renderComparison();
   } catch (error) {
     if (request === comparisonRequest && comparisonDialog.open) $('comparison-status').textContent = error.message;
@@ -304,13 +364,18 @@ $('compare').addEventListener('click', () => {
   });
   $('comparison-view').value = 'sheet';
   comparisonDialog.showModal();
-  // Skip the picker when there is only one other model.
-  options.selectedIndex = options.length === 2 ? 1 : 0;
-  loadComparisonBaseline(options.value === '' ? undefined : entries[Number(options.value)]);
+  // Demo files form a known pair. Imported files require an explicit baseline.
+  const baseline = lastBaseline || (activeEntry.cliPath && entries.find((entry) => entry !== activeEntry && entry.cliPath));
+  const baselineIndex = entries.indexOf(baseline);
+  options.value = baselineIndex >= 0 ? String(baselineIndex) : '';
+  if (baseline && baselineIndex < 0) {
+    options.add(new Option(baseline.path, 'external', false, true));
+  }
+  loadComparisonBaseline(baseline);
 });
 $('baseline-options').addEventListener('change', (event) => {
   const index = event.target.value;
-  loadComparisonBaseline(index === '' ? undefined : entries[Number(index)]);
+  loadComparisonBaseline(index === 'external' ? lastBaseline : entries[Number(index || -1)]);
 });
 $('open-baseline').addEventListener('click', () => {
   $('baseline-file').value = '';
@@ -337,13 +402,35 @@ comparisonDialog.addEventListener('close', () => {
 });
 for (const button of viewButtons) {
   button.addEventListener('click', () => {
+    updateNavigation('orbit');
     viewer.setView(button.dataset.view);
     setActiveView(button.dataset.view);
   });
 }
 viewerControls();
 function viewerControls() {
-  $('fit').addEventListener('click', () => viewer.fit());
+  $('fit').addEventListener('click', () => {
+    updateNavigation('orbit');
+    viewer.fit();
+  });
+  $('turntable').addEventListener('click', () => updateNavigation(navigation === 'turntable' ? 'orbit' : 'turntable'));
+  $('fly').addEventListener('click', () => updateNavigation(navigation === 'fly' ? 'orbit' : 'fly'));
+  $('fly-speed').addEventListener('change', (event) => viewer.setFlySpeed(Number(event.target.value)));
+  stage.addEventListener('keydown', (event) => {
+    if (event.code !== 'Escape' || navigation !== 'fly') return;
+    event.preventDefault();
+    updateNavigation('orbit');
+    $('fly').focus({ preventScroll: true });
+  });
+  const move = (direction, pressed) => viewer.fly.setTouch(direction, pressed);
+  for (const button of document.querySelectorAll('[data-move]')) {
+    button.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      button.setPointerCapture(event.pointerId);
+      move(button.dataset.move, true);
+    });
+    button.addEventListener('lostpointercapture', () => move(button.dataset.move, false));
+  }
   for (const [id, method] of [['grid', 'setGrid'], ['wireframe', 'setWireframe']]) {
     $(id).addEventListener('click', () => {
       const next = $(id).getAttribute('aria-pressed') !== 'true';
@@ -355,12 +442,60 @@ function viewerControls() {
     if (event.buttons && event.target instanceof HTMLCanvasElement) setActiveView('');
   });
 }
-$('copy').addEventListener('click', async () => {
+
+function quotePath(path, shell) {
+  const relative = path.startsWith('-') ? `./${path}` : path;
+  const quoted = relative.replaceAll("'", shell === 'powershell' ? "''" : "'\\''");
+  return `'${quoted}'`;
+}
+
+function updateHandoff() {
+  const current = $('handoff-model').value.trim();
+  const baseline = $('handoff-baseline').value.trim();
+  const check = $('handoff-brief').value.trim();
+  const shell = $('handoff-shell').value;
+  const valid = /\.glb$/i.test(current) && (!baseline || /\.glb$/i.test(baseline));
+  const command = valid ? [
+    'node scripts/inspect.mjs',
+    quotePath(current, shell),
+    baseline ? `--baseline ${quotePath(baseline, shell)}` : '',
+  ].filter(Boolean).join(' ') : '';
+  $('copy-command').disabled = !valid;
+  $('copy-task').disabled = !valid;
+  $('copy-status').textContent = '';
+  $('handoff-task').value = valid ? [
+    'Review this 3D model using ModelCheck. Run the command below from the ModelCheck checkout.',
+    '', command, '',
+    'Open the PNG from stdout with your image tool. Read the review JSON for bounds and counts.',
+    ...(baseline ? ['Check the baseline and current model side by side. Check identityStatus and confirm the pairing if the IDs differ or are missing.'] : []),
+    check ? `Review target: ${check}` : 'Review the silhouette, part alignment and visible gaps.',
+    'Report what you observed. If a change is needed and you have the generator, revise it, export a new GLB and check it against the baseline.',
+  ].join('\n') : 'Enter a current .glb path and, if supplied, a baseline .glb path.';
+  return command;
+}
+
+$('open-handoff').addEventListener('click', () => {
+  const baseline = lastBaseline || (activeEntry.cliPath && entries.find((entry) => entry !== activeEntry && entry.cliPath));
+  $('handoff-model').value = activeEntry.cliPath || activeEntry.path;
+  $('handoff-baseline').value = baseline ? baseline.cliPath || baseline.path : '';
+  $('handoff-brief').value = '';
+  updateHandoff();
+  $('handoff').showModal();
+});
+for (const id of ['handoff-model', 'handoff-baseline', 'handoff-brief', 'handoff-shell']) {
+  $(id).addEventListener('input', updateHandoff);
+}
+for (const id of ['copy-command', 'copy-task']) $(id).addEventListener('click', async () => {
+  const command = updateHandoff();
+  const preview = $('handoff-task');
   try {
-    await navigator.clipboard.writeText('npm run inspect -- model.glb');
-    $('copy-status').textContent = 'Copied';
+    await navigator.clipboard.writeText(id === 'copy-command' ? command : preview.value);
+    $('copy-status').textContent = id === 'copy-command' ? 'Command copied.' : 'Agent task copied.';
   } catch {
-    $('copy-status').textContent = 'Select the command to copy it.';
+    preview.focus();
+    const start = id === 'copy-command' ? preview.value.indexOf(command) : 0;
+    preview.setSelectionRange(start, id === 'copy-command' ? start + command.length : preview.value.length);
+    $('copy-status').textContent = 'Text selected. Use your keyboard shortcut to copy.';
   }
 });
 

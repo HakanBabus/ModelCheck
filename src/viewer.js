@@ -9,6 +9,7 @@ import dracoWrapper from 'three/addons/libs/draco/gltf/draco_wasm_wrapper.js?url
 import dracoWasm from 'three/addons/libs/draco/gltf/draco_decoder.wasm?url';
 import basisScript from 'three/addons/libs/basis/basis_transcoder.js?url';
 import basisWasm from 'three/addons/libs/basis/basis_transcoder.wasm?url';
+import { FlyControls } from './fly-controls.js';
 
 export const VIEWS = {
   iso: { label: '3/4', direction: [1, .7, 1.22], up: [0, 1, 0] },
@@ -22,7 +23,7 @@ const decoderUrls = new Map(Object.entries({
   'modelcheck-decoder/basis_transcoder.js': basisScript,
   'modelcheck-decoder/basis_transcoder.wasm': basisWasm,
 }));
-const BACKGROUND = '#222a2e';
+const BACKGROUND = '#1a1e20';
 const REVIEW_VIEWS = ['front', 'right', 'top', 'iso'];
 
 function pngBlob(canvas) {
@@ -40,6 +41,20 @@ function comparisonDelta(baseline, candidate) {
     key, candidate.bounds[key].map((value, axis) => value - baseline.bounds[key][axis]),
   ]));
   return delta;
+}
+
+function revisionIdentity(json) {
+  const identity = json.asset?.extras?.modelcheck;
+  const label = (field) => typeof field === 'string' && field.trim() ? field.trim().slice(0, 160) : undefined;
+  const assetId = label(identity?.assetId);
+  if (!assetId) return undefined;
+  const revision = label(identity.revision);
+  return revision ? { assetId, revision } : { assetId };
+}
+
+function compareIdentity(baseline, candidate) {
+  if (!baseline.identity || !candidate.identity) return 'unrecorded';
+  return baseline.identity.assetId === candidate.identity.assetId ? 'matching-id' : 'different-ids';
 }
 
 function normalizeBounds(box) {
@@ -84,6 +99,7 @@ function validateGLB(buffer) {
       throw new Error('Export a self-contained GLB with embedded buffers and textures.');
     }
   }
+  return revisionIdentity(json);
 }
 
 function describe(root, box, animations, name, bytes) {
@@ -137,6 +153,7 @@ export class Viewer {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.addEventListener('change', () => this.render());
+    this.fly = new FlyControls(this.camera, this.renderer.domElement, () => this.render());
     this.axes = [...stage.querySelectorAll('#axes span')];
     const manager = new THREE.LoadingManager();
     manager.setURLModifier((url) => {
@@ -149,7 +166,16 @@ export class Viewer {
       .setDRACOLoader(new DRACOLoader(manager).setDecoderPath('modelcheck-decoder/'))
       .setKTX2Loader(new KTX2Loader(manager).setTranscoderPath('modelcheck-decoder/').detectSupport(this.renderer));
     new ResizeObserver(() => this.resize()).observe(stage);
-    this.renderer.setAnimationLoop(() => this.controls.update());
+    let lastFrame;
+    this.renderer.setAnimationLoop((now) => {
+      const seconds = lastFrame === undefined ? 0 : Math.min((now - lastFrame) / 1000, .05);
+      lastFrame = now;
+      if (this.fly.enabled) {
+        if (this.fly.update(seconds)) this.render();
+      } else {
+        this.controls.update(seconds);
+      }
+    });
   }
 
   resize() {
@@ -160,7 +186,7 @@ export class Viewer {
     this.renderer.setSize(width, height, false);
     this.camera.aspect = aspect;
     this.camera.updateProjectionMatrix();
-    if (this.box && aspect < oldAspect) {
+    if (this.box && !this.fly.enabled && aspect < oldAspect) {
       const offset = this.camera.position.clone().sub(this.controls.target);
       if (offset.length() < this.fitDistance()) offset.setLength(this.fitDistance());
       this.camera.position.copy(this.controls.target).add(offset);
@@ -182,7 +208,7 @@ export class Viewer {
   }
 
   async readModel(buffer, name) {
-    validateGLB(buffer);
+    const identity = validateGLB(buffer);
     const result = await this.loader.parseAsync(buffer, '');
     const root = result.scene;
     const originalBox = new THREE.Box3().setFromObject(root, true);
@@ -192,7 +218,9 @@ export class Viewer {
       disposeModel(root);
       throw new Error('The GLB has no visible geometry with finite dimensions.');
     }
-    return { root, originalBox, metadata: describe(root, originalBox, result.animations, name, buffer.byteLength) };
+    const metadata = describe(root, originalBox, result.animations, name, buffer.byteLength);
+    if (identity) metadata.identity = identity;
+    return { root, originalBox, metadata };
   }
 
   async load(buffer, name) {
@@ -220,10 +248,10 @@ export class Viewer {
     this.scene.add(this.model);
     this.box = new THREE.Box3().setFromObject(this.model, true);
     this.radius = this.box.getBoundingSphere(new THREE.Sphere()).radius;
-    this.grid = new THREE.GridHelper(18, 42, 0x64787e, 0x404e53);
+    this.grid = new THREE.GridHelper(26, 54, 0x555f61, 0x394043);
     this.grid.position.y = this.box.min.y - .012;
     this.grid.material.transparent = true;
-    this.grid.material.opacity = .65;
+    this.grid.material.opacity = .52;
     this.scene.add(this.grid);
     this.grid.visible = this.gridVisible !== false;
     this.setWireframe(false);
@@ -235,6 +263,32 @@ export class Viewer {
     const vertical = THREE.MathUtils.degToRad(this.camera.fov / 2);
     const horizontal = Math.atan(Math.tan(vertical) * this.camera.aspect);
     return this.radius / Math.sin(Math.min(vertical, horizontal)) * 1.12;
+  }
+
+  setNavigation(mode) {
+    if (mode === 'fly') {
+      this.orbitPosition = this.camera.position.clone();
+      this.orbitTarget = this.controls.target.clone();
+      this.controls.autoRotate = false;
+      this.controls.enabled = false;
+      this.fly.setEnabled(true);
+      this.renderer.domElement.focus({ preventScroll: true });
+    } else {
+      if (this.fly.enabled) {
+        this.fly.setEnabled(false);
+        this.camera.position.copy(this.orbitPosition);
+        this.controls.target.copy(this.orbitTarget);
+      }
+      this.controls.enabled = true;
+      this.controls.autoRotate = mode === 'turntable';
+      this.controls.update(0);
+    }
+    this.render();
+  }
+
+  setFlySpeed(multiplier) {
+    this.fly.speed = multiplier;
+    if (this.fly.enabled) this.renderer.domElement.focus({ preventScroll: true });
   }
 
   setView(key) {
@@ -392,6 +446,7 @@ export class Viewer {
       baseline: baseline.metadata, candidate,
       delta: comparisonDelta(baseline.metadata, candidate),
       framing: 'shared-glb-coordinates',
+      identityStatus: compareIdentity(baseline.metadata, candidate),
     };
     let disposed = false;
     return {
@@ -426,8 +481,9 @@ export class Viewer {
     context.fillText('ModelCheck / Compare', margin, 28);
     context.font = '14px system-ui';
     context.fillStyle = '#d6e1e3';
-    context.fillText(`Baseline · ${report.baseline.name}`, margin, 55, width);
-    context.fillText(`Current · ${report.candidate.name}`, margin + width + gutter, 55, width);
+    const label = ({ name, identity }) => [name, identity?.revision].filter(Boolean).join(' · ');
+    context.fillText(`Baseline · ${label(report.baseline)}`, margin, 55, width);
+    context.fillText(`Current · ${label(report.candidate)}`, margin + width + gutter, 55, width);
 
     // Both GLBs use the union's transform so differences in scale and origin remain visible.
     const model = this.model;
