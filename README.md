@@ -75,7 +75,7 @@ npm run --silent share -- public/rover.glb --baseline public/rover-raised.glb --
 
 ## Learn and build
 
-- [**Python model guide**](PYTHON_MODEL_GUIDE.md) — Turn dimensions into a parametric stand, export it, and verify a revision with the image and report. Includes a Blender Python export example.
+- [**Python model guide**](PYTHON_MODEL_GUIDE.md) — Choose a modeling approach, build a parametric stand or hollow vessel in Python, and review the exported GLB.
 - [**Agent instructions**](AGENTS.md) — Use the CLI or browser API in a coding agent's generate, inspect, and revise loop.
 
 ```sh

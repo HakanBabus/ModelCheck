@@ -1,12 +1,31 @@
-# Python model generation for coding agents
+# Build 3D assets with Python
 
-Keep an editable Python generator, export a GLB, and open a rendered image of the output before reporting that a visual requirement is met.
+Use Python to build the geometry, assemble materials and parts, and export a self-contained **GLB**. Keep the generator editable so you can revise the model after seeing the rendered result. Start with the technique that fits the shape and the asset's intended use.
 
 ## Turn the brief into parameters
 
-Write down what you can check before making geometry. For a display stand, that might be **1.6 m wide, 1.2 m high and 0.8 m deep**, centered on **X** and **Z**, with its base on **Y = 0**. Identify which parts need to move when a dimension changes. Map those decisions to named parameters in the generator.
+Translate the brief into the geometry the viewer should recognize. Identify the **silhouette, proportions, contact points, openings and moving parts** that define the asset. Give exact requirements named parameters. For a display stand, that might be **1.6 m wide, 1.2 m high and 0.8 m deep**, centered on **X** and **Z**, with its base on **Y = 0**. Derive post positions from the platform width so a revision keeps the design coherent.
 
-Use pure Python for basic procedural geometry. Use **Blender Python** when you need modifiers, detailed materials, UVs, or animation. Keep equivalent assets in the same units and coordinate system across revisions so ModelCheck shows real changes in placement and size.
+For a visual brief, start with what should read from the target camera. A close-up handheld prop may need a shaped grip, seams and varied roughness. An asset viewed at a distance benefits more from a recognizable outline and distinct groups of materials. Use the available references to make those choices. Treat approximate dimensions, style and construction details as design decisions when the brief leaves them open.
+
+## Choose geometry that fits the shape
+
+| Shape or requirement | Python approaches to consider |
+| --- | --- |
+| An assembly with distinct parts | Place named primitives or chamfered meshes with transforms. Reuse geometry for repeated parts such as wheels, posts or fasteners. Keep parts separate where materials, pivots or later edits benefit. |
+| A cylindrical, turned or hollow form | Revolve a radius–height profile. Encode the lip, inner wall and base in the section so they remain visible from above and at an oblique angle. |
+| A handle, cable or organic silhouette | Sweep a section along a curve or loft between sections. Add samples where curvature changes. Check the frame orientation so the section stays stable through bends. |
+| Mechanical openings or precise joins | Construct the surrounding surfaces explicitly, or use a Python solid-modeling or mesh boolean library when that makes intersections easier to control. Check narrow walls and the output mesh after tessellation. |
+| A textured or animated asset | Use an exporter that supports the properties you need. Author UVs for image textures, meaningful pivots for moving rigid parts, or joints and weights for skinning. Check the exported result in a viewer that supports playback if motion is part of the brief. |
+
+These approaches can be combined within one asset. The examples use the standard library and a small GLB writer. A library such as **Trimesh** is useful when you want mesh operations or a scene exporter. Check that the chosen export path preserves the attributes the asset needs. [Trimesh glTF exporter](https://trimesh.org/trimesh.exchange.gltf.html)
+
+### Add detail that reads in the render
+
+- **Silhouette and construction.** Check the main forms at the intended viewing size. Add thickness at exposed edges and believable transitions where parts meet. Place bevels where they will catch light, especially around the rim of an opening or the edge of a large flat surface.
+- **Shading and materials.** Match normals to the shape. Smooth a curved span and give intentional creases their own normals. Use roughness, metalness and color to distinguish materials at the same lighting angle. Check the highlights in the rendered GLB.
+- **Export and scale.** Keep the origin useful for placement or animation. glTF uses **+Y up, +Z forward, and meters**. Keep scale and origin consistent across revisions. Embed buffers and textures in the GLB, and use compatible UV and material data if the brief calls for textures. [glTF coordinate system and units](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#coordinate-system-and-units)
+- **Verification.** Open the generated PNG and check the asset at more than one angle. An overview can establish silhouette, while a top or close-up view can reveal a blocked opening or a bad join. Use bounds for dimensions and mesh checks for properties such as watertightness or self-intersection when required. Record observations you can point to in the image or report.
 
 ## Build a parametric stand
 
@@ -69,35 +88,73 @@ In the **Right (+X)** comparison, the rear-right tire on the baseline is higher 
 - **`PALETTE`** sets linear RGBA base colors, metallic factors, and roughness.
 - **`Model.write()`** packs indexed triangle geometry, normals, transforms, and materials into a single GLB. Mesh coordinates follow glTF's Y-up convention. This rover treats +Z as its front.
 
-## Export from Blender Python
+## Build a hollow vessel from a profile
 
-If your model uses Blender modifiers, UVs or textures, write the scene with **`bpy`** and export it from Blender's Python runtime. Example `make_model.py`:
+This example makes a ceramic vessel with a slightly tapered wall, rounded lip and recessed interior. The **profile** gives you control over those features. Change the radii and heights to explore other silhouettes, or add a handle as a separate swept mesh. This version of the helper expects an ordered profile with a pole at each end and positive radii between them.
+
+Save the Python below as **`make_vessel.py`** at the repository root. It uses the same standard-library writer as the rover.
 
 ```python
-from pathlib import Path
+import math
 import sys
-import bpy
+from pathlib import Path
 
-args = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
-output = Path(args[0] if args else "model.glb").resolve()
-output.parent.mkdir(parents=True, exist_ok=True)
+from examples.generate_rover import Model
 
-bpy.ops.object.select_all(action="SELECT")
-bpy.ops.object.delete()
-bpy.ops.mesh.primitive_cube_add(size=1, location=(0, 0, 0.5))
-base = bpy.context.object
-base.name = "Base"
-base.dimensions = (1.6, 0.8, 1.0)
-bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
-bpy.ops.mesh.primitive_uv_sphere_add(radius=0.36, location=(0.25, 0, 1.15))
-bpy.context.object.name = "Cap"
 
-bpy.ops.export_scene.gltf(filepath=str(output), export_format="GLB", export_yup=True)
+def revolve(profile, segments=64):
+    """Rotate a (radius, Y) section about the Y axis."""
+    positions, normals, indices, rings = [], [], [], []
+    angles = [math.tau * i / segments for i in range(segments)]
+
+    for index, (radius, height) in enumerate(profile):
+        if radius == 0:
+            # One vertex at each pole avoids a ring of coincident vertices.
+            rings.append([len(positions)] * segments)
+            positions.append((0, height, 0))
+            normals.append((0, -1 if index == 0 else 1, 0))
+            continue
+
+        previous_radius, previous_height = profile[index - 1]
+        next_radius, next_height = profile[index + 1]
+        dr = next_radius - previous_radius
+        dy = next_height - previous_height
+        length = math.hypot(dr, dy)
+        ring = []
+        for angle in angles:
+            c, s = math.cos(angle), math.sin(angle)
+            ring.append(len(positions))
+            positions.append((radius * c, height, radius * s))
+            normals.append((dy * c / length, -dr / length, dy * s / length))
+        rings.append(ring)
+
+    for current, following in zip(rings, rings[1:]):
+        for i in range(segments):
+            j = (i + 1) % segments
+            if current[i] != current[j]:
+                indices.extend((current[i], following[i], current[j]))
+            if following[i] != following[j]:
+                indices.extend((current[j], following[i], following[j]))
+    return positions, normals, indices
+
+
+# Travel from the underside, up the outer wall, and down the inner wall.
+section = [
+    (0, 0), (.099, 0), (.105, .006), (.109, .025),
+    (.104, .233), (.109, .244), (.111, .250), (.109, .255),
+    (.102, .258), (.096, .256), (.092, .251), (.091, .244),
+    (.092, .033), (.087, .020), (0, .020),
+]
+model = Model(asset_id="my-project:vessel", revision="v1")
+model.part("Ceramic vessel", revolve(section), (0, 0, 0), material=0)
+model.write(Path(sys.argv[1] if len(sys.argv) > 1 else "review/vessel.glb"))
 ```
 
 ```sh
-blender --background --factory-startup --python-exit-code 1 --python make_model.py -- review/blender.glb
-npm run inspect -- review/blender.glb --out review/blender.png
+python make_vessel.py review/vessel.glb
+npm run --silent inspect -- review/vessel.glb --out review/vessel.png
 ```
 
-Blender uses Z-up in its scene. Its glTF exporter converts to Y-up with **`export_yup=True`**. Check the exported front in ModelCheck and use the JSON bounds if your project requires exact dimensions. See the [Blender glTF export API](https://docs.blender.org/api/main/bpy.ops.export_scene.html).
+In the **top and ¾ views**, check that the rim is continuous and the inner wall is visible. In the **front view**, look for a flat base and a smooth transition into the lip. The bounds should be approximately **0.222 × 0.258 × 0.222 m** in XYZ order. If a wall appears missing, inspect triangle winding and normals from inside the opening. For a close-up version, choose the profile and angular sampling based on the silhouette and highlights. The example writer uses 16-bit indices per primitive. An exporter with 32-bit indices or a sensible split into multiple primitives can accommodate larger meshes.
+
+![Four ModelCheck views of the Python vessel. The three-quarter view shows the rounded lip and inner wall.](docs/python-vessel.png)
