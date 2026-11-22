@@ -10,6 +10,12 @@
 
 The command uses the initial pose and centered camera framing. Use the JSON bounds for exact GLB coordinates. The sheet helps check visible geometry. Watertightness, topology quality, hidden faces and animation motion require separate checks appropriate to the asset.
 
+## Send the user a review link
+
+After inspecting the model, run `npm run --silent share -- revised.glb --baseline original.glb --title "Model review" --note "What to check"`. Omit the baseline for a single model. The **`url`** opens the 3D review directly from the same computer, and the server closes after one idle hour. Verify that it opens before sending it. Keep the review directory while the link is in use.
+
+For a user on another device, use **`--static`** and publish the returned **`directory`** to a host the user can reach, with the user's authorization for the files and audience. The directory contains the chosen GLBs and the viewer. Share the resulting hosted address after verifying it. Static generation returns **`url: null`** until you supply hosting.
+
 ## Drive the browser directly
 
 Run `npm run dev` or open the static site. A browser automation client can use **Open GLB** or set the **`#files`** file-input value via its file picker API. Wait for **`#state[data-phase="ready"]`**, or read **`#stage-message`** if the phase is **`error`**. Click **Download review PNG** and wait for the download. Use **`?automation`** to skip the default sample.

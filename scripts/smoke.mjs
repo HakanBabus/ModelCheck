@@ -12,6 +12,7 @@ const baseline = 'public/rover-raised.glb';
 const temp = await mkdtemp(join(tmpdir(), 'modelcheck-test-'));
 let browser;
 let site;
+let reviewServerPid;
 
 function sizeOfPng(bytes) {
   assert.equal(bytes.toString('hex', 0, 8), '89504e470d0a1a0a');
@@ -109,24 +110,22 @@ try {
   await page.keyboard.press('Escape');
   assert.equal(await page.locator('#stage').getAttribute('data-navigation'), 'orbit');
 
-  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
-  await page.getByRole('button', { name: 'Prepare agent task' }).click();
-  const handoff = page.getByRole('dialog', { name: 'Prepare agent task' });
-  const task = handoff.getByLabel('Task preview');
-  assert.match(await task.inputValue(), /public\/rover\.glb.*--baseline.*public\/rover-raised\.glb/);
-  await handoff.getByLabel('What should it check?', { exact: false }).fill('Check wheel clearance');
-  assert.match(await task.inputValue(), /Review target: Check wheel clearance/);
-  await handoff.getByLabel('Current GLB path').fill("models/Rover's $body.glb");
-  assert((await task.inputValue()).includes("'models/Rover''s $body.glb'"));
-  await handoff.getByLabel('Shell', { exact: true }).selectOption('bash');
-  assert((await task.inputValue()).includes("'models/Rover'\\''s $body.glb'"));
-  await handoff.getByRole('button', { name: 'Copy agent task' }).click();
-  await handoff.getByText('Agent task copied.').waitFor();
-  const clipboard = await page.evaluate(() => navigator.clipboard.readText());
-  assert.equal(clipboard.replaceAll('\r\n', '\n'), await task.inputValue());
-  await handoff.getByRole('button', { name: 'Close agent task' }).click();
-  const guideUrl = new URL(await page.locator('#python-guide').getAttribute('href'), page.url());
-  assert((await page.request.get(guideUrl.href)).ok());
+  await page.getByRole('button', { name: 'Front', exact: true }).click();
+  const frontFrame = await canvas.screenshot();
+  await canvas.dblclick({ position: { x: area.width * .55, y: area.height * .51 } });
+  assert.notDeepEqual(await canvas.screenshot(), frontFrame);
+  await page.getByRole('button', { name: 'Front', exact: true }).click();
+  await page.getByRole('button', { name: 'Measure', exact: true }).click();
+  await canvas.click({ position: { x: area.width * .46, y: area.height * .51 } });
+  assert.match(await page.locator('#measure-hint').textContent(), /second point/);
+  await canvas.click({ position: { x: area.width * .55, y: area.height * .51 } });
+  const measured = await page.locator('#measurement-distance').textContent();
+  assert.match(measured, /model units$/);
+  assert(Number(measured.split(' ')[0]) > 0 && Number(measured.split(' ')[0]) < 2.85);
+  await page.getByRole('button', { name: 'Clear measurement' }).click();
+  assert(await page.locator('#measurement').isHidden());
+  await page.getByRole('button', { name: 'Measure', exact: true }).click();
+  assert(await page.locator('#measure-hint').isHidden());
 
   await page.getByRole('button', { name: 'Compare versions' }).click();
   const comparisonDialog = page.getByRole('dialog', { name: 'Compare versions' });
@@ -234,8 +233,41 @@ try {
   assert.notEqual(comparisonReport.baseline.sha256, comparisonReport.model.sha256);
   assert.deepEqual(await readFile(comparisonOutput), comparedPng);
   await assert.rejects(run(process.execPath, ['scripts/inspect.mjs', sample, '--size', '399']), /size must/);
-  console.log('Passed: camera modes, agent handoff, revision identity, browser and CLI capture parity, recovery, library, and mobile layout.');
+
+  const share = JSON.parse((await run(process.execPath, [
+    'scripts/share.mjs', sample, '--baseline', baseline, '--dir', temp,
+    '--title', 'Wheel check', '--note', '<b>Check rear-wheel alignment.</b>',
+  ])).stdout);
+  reviewServerPid = share.serverPid;
+  assert.equal(share.scope, 'local');
+  assert.match(share.url, /^http:\/\/127\.0\.0\.1:\d+\//);
+  assert.equal((await fetch(new URL('package.json', share.url))).status, 404);
+  assert.deepEqual(await readFile(join(share.directory, 'current.glb')), await readFile(sample));
+  const shared = await browser.newPage();
+  await shared.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await shared.goto(share.url);
+  await shared.locator('#state[data-phase="ready"]').waitFor();
+  assert.equal(await shared.locator('#review-title').textContent(), 'Wheel check');
+  assert.equal(await shared.locator('#review-note').textContent(), '<b>Check rear-wheel alignment.</b>');
+  assert.equal(await shared.locator('#review-note b').count(), 0);
+  assert.deepEqual(await shared.evaluate(() => window.modelCheck.report()), sampleData);
+  await shared.getByRole('button', { name: 'Copy review link' }).click();
+  await shared.getByRole('button', { name: 'Link copied' }).waitFor();
+  assert.equal(await shared.evaluate(() => navigator.clipboard.readText()), share.url);
+  await shared.getByRole('button', { name: 'Compare versions' }).click();
+  await shared.locator('#comparison-identity[data-identity="matching-id"]:visible').waitFor();
+  await shared.locator('#comparison-image').waitFor({ state: 'visible' });
+  await shared.close();
+
+  const staticReview = JSON.parse((await run(process.execPath, [
+    'scripts/share.mjs', sample, '--static', '--dir', temp,
+  ])).stdout);
+  assert.equal(staticReview.scope, 'static');
+  assert.equal(staticReview.url, null);
+  assert.match(await readFile(staticReview.entry, 'utf8'), /data-shared-review/);
+  console.log('Passed: camera and measurement tools, revision identity, capture parity, and a share link opened in a fresh browser.');
 } finally {
+  if (reviewServerPid) process.kill(reviewServerPid);
   try { await browser?.close(); } finally {
     try { await site?.close(); } finally { await rm(temp, { recursive: true, force: true }); }
   }

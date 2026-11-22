@@ -39,6 +39,8 @@ Open the URL printed by Vite. The sample rover loads automatically. Choose **Com
 
 **Auto orbit** rotates the camera around the active model. Use **Fly** for large scenes. Drag to look, move with **WASD**, use **Q/E** for down/up, hold **Shift** to boost, and press **Esc** to return to orbit. Touchscreens show movement buttons.
 
+Double-click a part to make it the orbit target. Use **Measure** to pick two points and read their straight-line distance in the model's original units.
+
 ## Agent workflow
 
 Generate a GLB from Python, render it, and have the agent open the PNG with its image tool. After revising the generator, render the new GLB alongside the baseline and inspect the result.
@@ -50,7 +52,7 @@ npm run --silent inspect -- public/rover.glb --baseline public/rover-raised.glb 
 
 The command prints the absolute **`png`** and **`report`** paths as JSON. The report records geometry counts, bounds, and hashes. With a baseline, it also records **current minus baseline** deltas. Rendering runs locally and requires no API key.
 
-In the browser, **Prepare agent task** builds a copyable prompt and command from the current GLB, optional baseline, and what you want checked. The comparison shows whether the exporter-provided **model IDs** match, differ, or are missing. The baseline is selected explicitly. See [how to tag revisions](PYTHON_MODEL_GUIDE.md#record-which-model-the-versions-belong-to).
+The comparison shows whether the exporter-provided **model IDs** match, differ, or are missing. The baseline is selected explicitly. See [how to tag revisions](PYTHON_MODEL_GUIDE.md#record-which-model-the-versions-belong-to).
 
 | Option | What it controls |
 | --- | --- |
@@ -60,6 +62,16 @@ In the browser, **Prepare agent task** builds a copyable prompt and command from
 | **`--out <file.png>`** / **`--report <file.json>`** | Set output paths. The JSON defaults to the PNG path with a `.json` extension. |
 
 On Linux, use `npx playwright install --with-deps chromium` if browser system libraries are missing. Use **`--browser msedge`** to run with an existing Edge installation.
+
+## Share an interactive review
+
+A coding agent can generate a review link after inspecting its output. The recipient opens the viewer directly on the model, with an optional baseline and a short note.
+
+```sh
+npm run --silent share -- public/rover.glb --baseline public/rover-raised.glb --title "Rover review" --note "Check the rear wheel from the right."
+```
+
+**`url`** in the JSON result opens the review on the same computer. The server closes after one hour without activity. For a link another device can open, generate the review with **`--static`**, publish the returned **`directory`** to a static host and share that address. The folder contains copies of the selected GLBs. Confirm its audience before publishing.
 
 ## Learn and build
 

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Explore, compare and review local 3D models with a coding agent.">
+  <meta name="description" content="Open, measure, and compare GLB models in a shared 3D viewer.">
   <meta name="color-scheme" content="dark">
   <title>ModelCheck — GLB workspace</title>
 </head>
@@ -11,7 +11,7 @@
   <header class="topbar">
     <div class="identity"><span class="brand-icon"><i data-lucide="box"></i></span><strong>ModelCheck</strong><span class="workspace-label">Model review</span></div>
     <div class="top-actions">
-      <a href="#agent-panel" class="agent-jump"><i data-lucide="terminal"></i> Agent review</a>
+      <button id="copy-review-link" hidden><i data-lucide="link"></i> <span>Copy review link</span></button>
       <button id="open-folder"><i data-lucide="folder-open"></i> Open folder</button>
       <button id="open-files" class="primary"><i data-lucide="file-plus-2"></i> Open GLB</button>
     </div>
@@ -33,7 +33,8 @@
       <div id="stage" aria-label="Interactive 3D model">
         <div id="axes" aria-hidden="true"><span class="y">Y</span><span class="x">X</span><span class="z">Z</span></div>
         <div id="stage-message" hidden></div>
-        <div class="viewport-hint" id="orbit-hint">Drag to orbit · Scroll to zoom · Right-drag to pan</div>
+        <div class="viewport-hint" id="orbit-hint">Drag to orbit · Scroll to zoom · Double-click to focus</div>
+        <div class="viewport-hint" id="measure-hint" role="status" hidden></div>
         <div id="fly-hud" hidden>
           <div class="crosshair" aria-hidden="true"></div>
           <div class="fly-dpad" aria-label="Touch flight controls">
@@ -57,6 +58,7 @@
         <div class="view-actions">
           <button id="turntable" aria-pressed="false" title="Rotate around the model"><i data-lucide="rotate-cw"></i> Auto orbit</button>
           <button id="fly" aria-pressed="false" title="Explore the model with a free camera"><i data-lucide="navigation"></i> Fly</button>
+          <button id="measure" aria-pressed="false" title="Measure between two points"><i data-lucide="ruler"></i> Measure</button>
           <label id="speed-control" hidden><span>Speed</span><select id="fly-speed" aria-label="Fly speed"><option value=".28">Slow</option><option value="1" selected>Normal</option><option value="3">Fast</option></select></label>
           <span class="toolbar-divider" aria-hidden="true"></span>
           <button id="grid" class="icon" aria-label="Toggle grid" title="Toggle grid" aria-pressed="true"><i data-lucide="grid"></i></button>
@@ -71,21 +73,18 @@
       </div>
     </section>
     <aside class="inspector" aria-label="Model inspector">
-      <section class="automation" id="agent-panel">
-        <div class="agent-icon"><i data-lucide="terminal"></i></div>
-        <h2>AI agent review</h2>
-        <p>Give your coding agent a task it can run locally. It renders the GLB, opens the PNG and checks the result against your brief.</p>
-        <ol class="agent-flow">
-          <li><strong>Render</strong><span>Four views and a geometry report</span></li>
-          <li><strong>Inspect</strong><span>Check shape, fit and alignment</span></li>
-          <li><strong>Revise</strong><span>Rerun the generator and compare</span></li>
-        </ol>
-        <button id="open-handoff" class="primary" disabled><i data-lucide="clipboard-list"></i> Prepare agent task</button>
-        <a id="python-guide" class="guide-link" download="PYTHON_MODEL_GUIDE.md">Download Python guide</a>
+      <section id="review-context" hidden>
+        <h2 id="review-title">Shared review</h2>
+        <p id="review-note" hidden></p>
+        <input id="review-link" aria-label="Review link" type="url" readonly hidden>
       </section>
       <section class="geometry">
         <div class="panel-title"><h2>Geometry</h2><button id="report" class="icon" aria-label="Download model data" title="Download model data" disabled><i data-lucide="file-json"></i></button></div>
         <dl id="stats"></dl>
+      </section>
+      <section id="measurement" hidden>
+        <div class="panel-title"><h2>Distance</h2><button id="clear-measurement" class="icon" aria-label="Clear measurement" title="Clear measurement"><i data-lucide="x"></i></button></div>
+        <output id="measurement-distance" aria-live="polite"></output>
       </section>
     </aside>
   </main>
@@ -115,30 +114,6 @@
     <footer class="comparison-footer">
       <button id="save-comparison" class="primary" disabled><i data-lucide="layout-grid"></i> Download comparison PNG</button>
       <button id="save-comparison-json" disabled><i data-lucide="file-json"></i> Download changes JSON</button>
-    </footer>
-  </dialog>
-  <dialog id="handoff" aria-labelledby="handoff-title">
-    <header class="comparison-header">
-      <div><h2 id="handoff-title">Prepare agent task</h2><p>Paste the task into a coding agent with terminal and image access.</p></div>
-      <form method="dialog"><button class="icon" aria-label="Close agent task"><i data-lucide="x"></i></button></form>
-    </header>
-    <div class="handoff-content">
-      <div class="handoff-fields">
-        <label>Current GLB path<input id="handoff-model" type="text" autocomplete="off" spellcheck="false"></label>
-        <label>Baseline GLB path <span>(optional)</span><input id="handoff-baseline" type="text" autocomplete="off" spellcheck="false" placeholder="models/previous.glb"></label>
-      </div>
-      <p class="field-help">Use paths that exist on the agent’s machine, relative to its ModelCheck checkout or absolute.</p>
-      <label>What should it check? <span>(optional)</span><input id="handoff-brief" type="text" placeholder="Check wheel contact and alignment"></label>
-      <div class="task-preview-heading">
-        <label for="handoff-task">Task preview</label>
-        <div class="shell-label"><label for="handoff-shell">Shell</label><select id="handoff-shell"><option value="powershell">PowerShell</option><option value="bash">Bash</option></select></div>
-      </div>
-      <textarea id="handoff-task" rows="8" readonly spellcheck="false"></textarea>
-      <p id="copy-status" role="status"></p>
-    </div>
-    <footer class="comparison-footer">
-      <button id="copy-command"><i data-lucide="terminal"></i> Copy command</button>
-      <button id="copy-task" class="primary"><i data-lucide="copy"></i> Copy agent task</button>
     </footer>
   </dialog>
   <script type="module" src="/src/app.js"></script>

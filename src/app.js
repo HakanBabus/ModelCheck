@@ -1,17 +1,16 @@
 import {
-  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Box, Camera, ChevronsDown, ChevronsUp, ClipboardList,
-  Columns2, Copy, FileJson, FilePlus2, FolderOpen, Grid, Layers, LayoutGrid, Navigation, RotateCw,
-  Scan, Search, ShieldCheck, Terminal, X, createIcons,
+  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Box, Camera, ChevronsDown, ChevronsUp,
+  Columns2, FileJson, FilePlus2, FolderOpen, Grid, Layers, LayoutGrid, Link, Navigation, RotateCw,
+  Ruler, Scan, Search, ShieldCheck, X, createIcons,
 } from 'lucide';
 import { Viewer, VIEWS } from './viewer.js';
-import guideUrl from '../PYTHON_MODEL_GUIDE.md?url';
 import './style.css';
 
 const $ = (id) => document.getElementById(id);
 const icons = {
-  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Box, Camera, ChevronsDown, ChevronsUp, ClipboardList,
-  Columns2, Copy, FileJson, FilePlus2, FolderOpen, Grid, Layers, LayoutGrid, Navigation, RotateCw,
-  Scan, Search, ShieldCheck, Terminal, X,
+  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Box, Camera, ChevronsDown, ChevronsUp,
+  Columns2, FileJson, FilePlus2, FolderOpen, Grid, Layers, LayoutGrid, Link, Navigation, RotateCw,
+  Ruler, Scan, Search, ShieldCheck, X,
 };
 const renderIcons = () => createIcons({ icons, attrs: { 'aria-hidden': 'true' } });
 renderIcons();
@@ -20,7 +19,7 @@ const stage = $('stage');
 const automation = new URLSearchParams(location.search).has('automation');
 const viewButtons = [...document.querySelectorAll('[data-view]')];
 const modelButtons = [...viewButtons, ...[
-  'grid', 'wireframe', 'fit', 'sheet', 'compare', 'snapshot', 'report', 'fly', 'turntable', 'open-handoff',
+  'grid', 'wireframe', 'fit', 'sheet', 'compare', 'snapshot', 'report', 'fly', 'turntable', 'measure',
 ].map($)];
 const format = new Intl.NumberFormat('en', { maximumSignificantDigits: 4 });
 const countFormat = new Intl.NumberFormat('en');
@@ -30,6 +29,7 @@ let activeEntry;
 let report;
 let ticket = 0;
 let navigation = 'orbit';
+let measuring = false;
 let lastBaseline;
 const comparisonDialog = $('comparison');
 const deltaFormat = new Intl.NumberFormat('en', { maximumSignificantDigits: 4, signDisplay: 'exceptZero' });
@@ -37,7 +37,6 @@ let comparisonSession;
 let comparisonImage;
 let comparisonUrl;
 let comparisonRequest = 0;
-$('python-guide').href = guideUrl;
 
 function formatBytes(bytes) {
   if (!bytes) return '0 B';
@@ -52,15 +51,45 @@ function entryForFile(file) {
   };
 }
 
-function bundledEntry(name, detail) {
+function staticEntry(name, detail, file = name) {
   return {
-    name, path: name, detail, cliPath: `public/${name}`,
+    name, path: name, detail,
     async read() {
-      const response = await fetch(`${import.meta.env.BASE_URL}${name}`);
-      if (!response.ok) throw new Error('The built-in model could not be loaded.');
+      const response = await fetch(`${import.meta.env.BASE_URL}${file}`);
+      if (!response.ok) throw new Error('This model file could not be loaded.');
       return response.arrayBuffer();
     },
   };
+}
+
+function setModelPair(current, baseline) {
+  current.baseline = baseline;
+  if (baseline) baseline.baseline = current;
+  entries = baseline ? [current, baseline] : [current];
+  return select(current);
+}
+
+async function openSharedReview() {
+  const version = ticket;
+  const response = await fetch(`${import.meta.env.BASE_URL}review.json`);
+  if (!response.ok) throw new Error('The review manifest could not be loaded.');
+  const review = await response.json();
+  if (version !== ticket) return;
+  if (review.version !== 1 || typeof review.current !== 'string' || !/\.glb$/i.test(review.current)) {
+    throw new Error('This review has an invalid manifest.');
+  }
+  const title = typeof review.title === 'string' && review.title.trim() ? review.title : 'Shared review';
+  document.title = `${title} — ModelCheck`;
+  $('review-title').textContent = title;
+  const note = typeof review.note === 'string' ? review.note : '';
+  $('review-note').textContent = note;
+  $('review-note').hidden = !note;
+  const current = staticEntry(review.current, 'Current model', 'current.glb');
+  const baseline = typeof review.baseline === 'string' && /\.glb$/i.test(review.baseline)
+    ? staticEntry(review.baseline, 'Baseline', 'baseline.glb') : null;
+  current.shared = true;
+  if (baseline) baseline.shared = true;
+  await setModelPair(current, baseline);
 }
 
 function state(phase, error = '') {
@@ -74,6 +103,7 @@ function state(phase, error = '') {
 
 function updateNavigation(mode) {
   if (navigation === mode) return;
+  if (mode !== 'orbit') setMeasuring(false);
   navigation = mode;
   viewer.setNavigation(mode);
   stage.dataset.navigation = mode;
@@ -81,8 +111,36 @@ function updateNavigation(mode) {
   $('fly').setAttribute('aria-pressed', String(mode === 'fly'));
   $('fly-hud').hidden = mode !== 'fly';
   $('speed-control').hidden = mode !== 'fly';
-  $('orbit-hint').hidden = mode === 'fly';
+  $('orbit-hint').hidden = mode === 'fly' || measuring;
   if (mode !== 'orbit') setActiveView('');
+}
+
+function updateMeasureHint(distance) {
+  $('measure-hint').textContent = distance == null ? 'Select the second point' : 'Select a point to start a new measurement';
+  $('measurement').hidden = distance == null;
+  $('measurement-distance').textContent = distance == null ? '' : `${format.format(distance)} model units`;
+}
+
+function setMeasuring(active) {
+  measuring = active;
+  $('measure').setAttribute('aria-pressed', String(active));
+  stage.toggleAttribute('data-measuring', active);
+  $('measure-hint').hidden = !active;
+  $('orbit-hint').hidden = active || navigation === 'fly';
+  clearMeasurement();
+  if (active) stage.querySelector('canvas').focus({ preventScroll: true });
+}
+
+function clearMeasurement() {
+  viewer.clearMeasurement();
+  $('measure-hint').textContent = 'Select the first point on the model';
+  $('measurement').hidden = true;
+  $('measurement-distance').textContent = '';
+}
+
+function pickMeasurement(x, y) {
+  const result = viewer.measureAt(x, y);
+  if (result) updateMeasureHint(result.distance);
 }
 
 function setActiveView(view) {
@@ -160,6 +218,9 @@ function renderLibrary() {
 async function select(entry) {
   const version = ++ticket;
   activeEntry = entry;
+  $('review-context').hidden = !entry.shared;
+  $('copy-review-link').hidden = !entry.shared;
+  setMeasuring(false);
   lastBaseline = undefined;
   updateNavigation('orbit');
   report = null;
@@ -192,6 +253,9 @@ function importFiles(files, replace) {
     if (files.length) {
       ++ticket;
       activeEntry = undefined;
+      $('review-context').hidden = true;
+      $('copy-review-link').hidden = true;
+      setMeasuring(false);
       lastBaseline = undefined;
       updateNavigation('orbit');
       report = null;
@@ -364,8 +428,7 @@ $('compare').addEventListener('click', () => {
   });
   $('comparison-view').value = 'sheet';
   comparisonDialog.showModal();
-  // Demo files form a known pair. Imported files require an explicit baseline.
-  const baseline = lastBaseline || (activeEntry.cliPath && entries.find((entry) => entry !== activeEntry && entry.cliPath));
+  const baseline = lastBaseline || activeEntry.baseline;
   const baselineIndex = entries.indexOf(baseline);
   options.value = baselineIndex >= 0 ? String(baselineIndex) : '';
   if (baseline && baselineIndex < 0) {
@@ -415,12 +478,26 @@ function viewerControls() {
   });
   $('turntable').addEventListener('click', () => updateNavigation(navigation === 'turntable' ? 'orbit' : 'turntable'));
   $('fly').addEventListener('click', () => updateNavigation(navigation === 'fly' ? 'orbit' : 'fly'));
+  $('measure').addEventListener('click', () => {
+    updateNavigation('orbit');
+    setMeasuring(!measuring);
+  });
+  $('clear-measurement').addEventListener('click', clearMeasurement);
   $('fly-speed').addEventListener('change', (event) => viewer.setFlySpeed(Number(event.target.value)));
   stage.addEventListener('keydown', (event) => {
-    if (event.code !== 'Escape' || navigation !== 'fly') return;
-    event.preventDefault();
-    updateNavigation('orbit');
-    $('fly').focus({ preventScroll: true });
+    if (event.code === 'Escape' && measuring) {
+      event.preventDefault();
+      setMeasuring(false);
+      $('measure').focus({ preventScroll: true });
+    } else if (event.code === 'Escape' && navigation === 'fly') {
+      event.preventDefault();
+      updateNavigation('orbit');
+      $('fly').focus({ preventScroll: true });
+    } else if (event.code === 'Enter' && measuring && event.target instanceof HTMLCanvasElement) {
+      event.preventDefault();
+      const area = event.target.getBoundingClientRect();
+      pickMeasurement(area.left + area.width / 2, area.top + area.height / 2);
+    }
   });
   const move = (direction, pressed) => viewer.fly.setTouch(direction, pressed);
   for (const button of document.querySelectorAll('[data-move]')) {
@@ -438,64 +515,42 @@ function viewerControls() {
       viewer[method](next);
     });
   }
+  let start;
+  stage.addEventListener('pointerdown', (event) => {
+    if (!measuring || event.button !== 0 || !(event.target instanceof HTMLCanvasElement)) return;
+    start = { id: event.pointerId, x: event.clientX, y: event.clientY, dragged: false };
+  });
   stage.addEventListener('pointermove', (event) => {
     if (event.buttons && event.target instanceof HTMLCanvasElement) setActiveView('');
+    if (start?.id === event.pointerId && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 5) {
+      start.dragged = true;
+    }
+  });
+  stage.addEventListener('pointerup', (event) => {
+    if (start?.id !== event.pointerId) return;
+    if (measuring && !start.dragged && Math.hypot(event.clientX - start.x, event.clientY - start.y) <= 5) {
+      pickMeasurement(event.clientX, event.clientY);
+    }
+    start = undefined;
+  });
+  stage.addEventListener('pointercancel', () => { start = undefined; });
+  stage.addEventListener('dblclick', (event) => {
+    if (report && !measuring && navigation === 'orbit' && event.target instanceof HTMLCanvasElement
+        && viewer.focusAt(event.clientX, event.clientY)) setActiveView('');
   });
 }
 
-function quotePath(path, shell) {
-  const relative = path.startsWith('-') ? `./${path}` : path;
-  const quoted = relative.replaceAll("'", shell === 'powershell' ? "''" : "'\\''");
-  return `'${quoted}'`;
-}
-
-function updateHandoff() {
-  const current = $('handoff-model').value.trim();
-  const baseline = $('handoff-baseline').value.trim();
-  const check = $('handoff-brief').value.trim();
-  const shell = $('handoff-shell').value;
-  const valid = /\.glb$/i.test(current) && (!baseline || /\.glb$/i.test(baseline));
-  const command = valid ? [
-    'node scripts/inspect.mjs',
-    quotePath(current, shell),
-    baseline ? `--baseline ${quotePath(baseline, shell)}` : '',
-  ].filter(Boolean).join(' ') : '';
-  $('copy-command').disabled = !valid;
-  $('copy-task').disabled = !valid;
-  $('copy-status').textContent = '';
-  $('handoff-task').value = valid ? [
-    'Review this 3D model using ModelCheck. Run the command below from the ModelCheck checkout.',
-    '', command, '',
-    'Open the PNG from stdout with your image tool. Read the review JSON for bounds and counts.',
-    ...(baseline ? ['Check the baseline and current model side by side. Check identityStatus and confirm the pairing if the IDs differ or are missing.'] : []),
-    check ? `Review target: ${check}` : 'Review the silhouette, part alignment and visible gaps.',
-    'Report what you observed. If a change is needed and you have the generator, revise it, export a new GLB and check it against the baseline.',
-  ].join('\n') : 'Enter a current .glb path and, if supplied, a baseline .glb path.';
-  return command;
-}
-
-$('open-handoff').addEventListener('click', () => {
-  const baseline = lastBaseline || (activeEntry.cliPath && entries.find((entry) => entry !== activeEntry && entry.cliPath));
-  $('handoff-model').value = activeEntry.cliPath || activeEntry.path;
-  $('handoff-baseline').value = baseline ? baseline.cliPath || baseline.path : '';
-  $('handoff-brief').value = '';
-  updateHandoff();
-  $('handoff').showModal();
-});
-for (const id of ['handoff-model', 'handoff-baseline', 'handoff-brief', 'handoff-shell']) {
-  $(id).addEventListener('input', updateHandoff);
-}
-for (const id of ['copy-command', 'copy-task']) $(id).addEventListener('click', async () => {
-  const command = updateHandoff();
-  const preview = $('handoff-task');
+$('copy-review-link').addEventListener('click', async () => {
   try {
-    await navigator.clipboard.writeText(id === 'copy-command' ? command : preview.value);
-    $('copy-status').textContent = id === 'copy-command' ? 'Command copied.' : 'Agent task copied.';
+    await navigator.clipboard.writeText(location.href);
+    const label = $('copy-review-link').querySelector('span');
+    label.textContent = 'Link copied';
+    setTimeout(() => { label.textContent = 'Copy review link'; }, 2500);
   } catch {
-    preview.focus();
-    const start = id === 'copy-command' ? preview.value.indexOf(command) : 0;
-    preview.setSelectionRange(start, id === 'copy-command' ? start + command.length : preview.value.length);
-    $('copy-status').textContent = 'Text selected. Use your keyboard shortcut to copy.';
+    const link = $('review-link');
+    link.value = location.href;
+    link.hidden = false;
+    link.select();
   }
 });
 
@@ -553,10 +608,13 @@ try {
   if (automation) {
     $('model-title').textContent = 'Open a GLB';
     state('Idle');
+  } else if (document.documentElement.hasAttribute('data-shared-review')) {
+    openSharedReview().catch((error) => {
+      $('model-title').textContent = 'Review unavailable';
+      state('Error', error.message);
+    });
   } else {
-    const demo = bundledEntry('rover.glb', 'Aligned wheels');
-    entries = [demo, bundledEntry('rover-raised.glb', 'Raised rear wheel')];
-    select(demo);
+    setModelPair(staticEntry('rover.glb', 'Aligned wheels'), staticEntry('rover-raised.glb', 'Raised rear wheel'));
   }
 } catch (error) {
   $('model-title').textContent = 'Renderer unavailable';

@@ -134,6 +134,10 @@ export class Viewer {
     stage.prepend(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
+    this.measurement = new THREE.Group();
+    this.scene.add(this.measurement);
+    this.measurePoints = [];
+    this.raycaster = new THREE.Raycaster();
     const environment = new RoomEnvironment();
     const generator = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = generator.fromScene(environment, .04).texture;
@@ -242,6 +246,7 @@ export class Viewer {
     this.model.add(root);
     const { scale, offset } = normalizeBounds(originalBox);
     this.model.scale.setScalar(scale);
+    this.modelScale = scale;
     this.model.position.copy(offset);
     this.originalBox = originalBox;
     this.metadata = metadata;
@@ -327,6 +332,61 @@ export class Viewer {
     this.render();
   }
 
+  clearMeasurement() {
+    this.measurePoints.length = 0;
+    disposeModel(this.measurement);
+    this.measurement.clear();
+    this.render();
+  }
+
+  pickPoint(clientX, clientY) {
+    const { left, top, width, height } = this.renderer.domElement.getBoundingClientRect();
+    const position = new THREE.Vector2((clientX - left) * 2 / width - 1, 1 - (clientY - top) * 2 / height);
+    this.raycaster.setFromCamera(position, this.camera);
+    const hit = this.raycaster.intersectObject(this.model, true).find((result) => {
+      for (let node = result.object; node; node = node.parent) {
+        if (!node.visible) return false;
+      }
+      return result.object.isMesh;
+    });
+    return hit?.point.clone();
+  }
+
+  focusAt(clientX, clientY) {
+    const point = this.pickPoint(clientX, clientY);
+    if (!point) return false;
+    this.controls.target.copy(point);
+    this.controls.update();
+    this.render();
+    return true;
+  }
+
+  measureAt(clientX, clientY) {
+    const point = this.pickPoint(clientX, clientY);
+    if (!point) return null;
+    if (this.measurePoints.length === 2) this.clearMeasurement();
+    this.measurePoints.push(point);
+    const marker = new THREE.Mesh(
+      new THREE.SphereGeometry(.026, 12, 8),
+      new THREE.MeshBasicMaterial({ color: 0xd9ee9d, depthTest: false }),
+    );
+    marker.position.copy(point);
+    marker.renderOrder = 3;
+    this.measurement.add(marker);
+    if (this.measurePoints.length === 2) {
+      const line = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(this.measurePoints),
+        new THREE.LineBasicMaterial({ color: 0xd9ee9d, depthTest: false }),
+      );
+      line.renderOrder = 2;
+      this.measurement.add(line);
+      this.render();
+      return { distance: this.measurePoints[0].distanceTo(point) / this.modelScale };
+    }
+    this.render();
+    return { distance: null };
+  }
+
   reviewCamera(key, aspect, box = this.box) {
     const view = VIEWS[key];
     const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, .01, 40);
@@ -356,6 +416,7 @@ export class Viewer {
     const rendererSize = this.renderer.getSize(new THREE.Vector2());
     const pixelRatio = this.renderer.getPixelRatio();
     const gridVisible = this.grid.visible;
+    const measurementVisible = this.measurement.visible;
     const materialModes = new Map();
     if (clean) {
       this.model.traverse((node) => {
@@ -364,6 +425,7 @@ export class Viewer {
       });
       for (const material of materialModes.keys()) material.wireframe = false;
       this.grid.visible = false;
+      this.measurement.visible = false;
     }
     try {
       this.renderer.setPixelRatio(1);
@@ -371,6 +433,7 @@ export class Viewer {
     } finally {
       for (const [material, wireframe] of materialModes) material.wireframe = wireframe;
       this.grid.visible = gridVisible;
+      this.measurement.visible = measurementVisible;
       this.renderer.setPixelRatio(pixelRatio);
       this.renderer.setSize(rendererSize.x, rendererSize.y, false);
       this.render();

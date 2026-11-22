@@ -39,6 +39,8 @@ Vite’ın yazdırdığı adresi aç. Örnek araç hazır yüklenir. Tekerlek hi
 
 **Auto orbit** kamerayı modelin çevresinde döndürür. Büyük sahnelerde **Fly** ile gez. Bakmak için sürükle, ilerlemek için **WASD**, alçalmak ve yükselmek için **Q/E**, hızlanmak için **Shift** kullan. **Esc** yörünge moduna döndürür. Dokunmatik ekranda yön düğmeleri görünür.
 
+Bir parçaya çift tıklayarak dönüş merkezini oraya al. **Measure** ile seçtiğin iki noktanın doğrusal uzaklığını modelin orijinal birimiyle ölç.
+
 ## Ajan akışı
 
 Ajan Python ile GLB üretir, görüntüyü alır ve kendi görsel okuma aracıyla PNG’yi inceler. Python kodunu değiştirdikten sonra yeni sürümü referans modelle yan yana render edip sonucu kontrol eder.
@@ -50,7 +52,7 @@ npm run --silent inspect -- public/rover.glb --baseline public/rover-raised.glb 
 
 Komut, **`png`** ve **`report`** dosyalarının tam yollarını JSON olarak yazdırır. Raporda geometri sayımları, sınır ölçüleri ve dosya özetleri bulunur. Referans model verildiğinde farklar **yeni sürüm eksi referans** olarak hesaplanır. Render yerelde çalışır ve API anahtarı gerektirmez.
 
-Tarayıcıdaki **Prepare agent task**, seçili GLB, isteğe bağlı referans ve kontrol isteğinden kopyalanabilir bir görev ile komut hazırlar. Karşılaştırma ekranı, üreticinin yazdığı **model kimliklerinin** eşleştiğini, farklı olduğunu ya da bulunmadığını gösterir. Karşılaştırılacak referansı sen veya ajan seçer. [Sürüm etiketleme rehberi](PYTHON_MODEL_GUIDE.md#record-which-model-the-versions-belong-to)
+Karşılaştırma ekranı, üreticinin yazdığı **model kimliklerinin** eşleştiğini, farklı olduğunu ya da bulunmadığını gösterir. Karşılaştırılacak referansı sen veya ajan seçer. [Sürüm etiketleme rehberi](PYTHON_MODEL_GUIDE.md#record-which-model-the-versions-belong-to)
 
 | Parametre | Ne işe yarar? |
 | --- | --- |
@@ -60,6 +62,16 @@ Tarayıcıdaki **Prepare agent task**, seçili GLB, isteğe bağlı referans ve 
 | **`--out <dosya.png>`** / **`--report <dosya.json>`** | Çıktı yollarını belirler. JSON, varsayılan olarak PNG dosyasının adını `.json` uzantısıyla alır. |
 
 Linux’ta tarayıcı sistem kütüphaneleri eksikse `npx playwright install --with-deps chromium` çalıştır. Kurulu Edge’i kullanmak için **`--browser msedge`** ekle.
+
+## İnceleme bağlantısı paylaş
+
+Ajan çıktısını kontrol ettikten sonra etkileşimli bir inceleme bağlantısı hazırlayabilir. Kullanıcı bağlantıyı açtığında güncel modeli, varsa referans sürümü ve kısa notu görür.
+
+```sh
+npm run --silent share -- public/rover.glb --baseline public/rover-raised.glb --title "Keşif aracı" --note "Sağ görünüşten arka tekerleği kontrol et."
+```
+
+JSON’daki **`url`** aynı bilgisayarda açılır. Sunucu bir saat kullanılmadığında kapanır. Başka cihazlardan açılacak bir adres için **`--static`** ile oluşturulan **`directory`** klasörünü statik bir sunucuda yayınla ve o adresi paylaş. Klasör seçilen GLB’lerin kopyalarını içerir.
 
 ## Rehberler ve geliştirme
 
