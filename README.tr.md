@@ -75,7 +75,7 @@ JSON’daki **`url`** aynı bilgisayarda açılır. Sunucu bir saat kullanılmad
 
 ## Rehberler ve geliştirme
 
-- [**Python model rehberi**](PYTHON_MODEL_GUIDE.md) — Modele uygun yöntemi seç, Python ile parametrik bir stand veya içi boş bir kap üret ve çıkan GLB’yi incele.
+- [**Python model rehberi**](PYTHON_MODEL_GUIDE.md) — Blender kullanmadan Python ile GLB üret. Çalıştırılabilir örneklerle modele uygun yöntemleri seç, çıktıdaki sorunları bul ve kaynak kodda düzelt.
 - [**Ajan talimatları**](AGENTS.md) — Model üretme, inceleme ve düzeltme döngüsünde CLI’ı veya tarayıcı API’sini kullan.
 
 ```sh

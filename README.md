@@ -75,7 +75,7 @@ npm run --silent share -- public/rover.glb --baseline public/rover-raised.glb --
 
 ## Learn and build
 
-- [**Python model guide**](PYTHON_MODEL_GUIDE.md) — Choose a modeling approach, build a parametric stand or hollow vessel in Python, and review the exported GLB.
+- [**Python model guide**](PYTHON_MODEL_GUIDE.md) — Build GLB assets with Python, without Blender. Includes runnable generators, modeling approaches and ways to spot and fix defects in the exported asset.
 - [**Agent instructions**](AGENTS.md) — Use the CLI or browser API in a coding agent's generate, inspect, and revise loop.
 
 ```sh

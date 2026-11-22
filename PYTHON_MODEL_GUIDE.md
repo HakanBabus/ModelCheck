@@ -1,12 +1,14 @@
 # Build 3D assets with Python
 
-Use Python to build the geometry, assemble materials and parts, and export a self-contained **GLB**. Keep the generator editable so you can revise the model after seeing the rendered result. Start with the technique that fits the shape and the asset's intended use.
+This guide takes you from a brief to a reviewable 3D asset using **Python and a self-contained GLB**. The examples generate geometry, materials and scene structure with the Python standard library. The entire workflow runs without Blender. ModelCheck renders the result so a coding agent can inspect it, revise the generator and share the finished asset.
 
 ## Turn the brief into parameters
 
 Translate the brief into the geometry the viewer should recognize. Identify the **silhouette, proportions, contact points, openings and moving parts** that define the asset. Give exact requirements named parameters. For a display stand, that might be **1.6 m wide, 1.2 m high and 0.8 m deep**, centered on **X** and **Z**, with its base on **Y = 0**. Derive post positions from the platform width so a revision keeps the design coherent.
 
 For a visual brief, start with what should read from the target camera. A close-up handheld prop may need a shaped grip, seams and varied roughness. An asset viewed at a distance benefits more from a recognizable outline and distinct groups of materials. Use the available references to make those choices. Treat approximate dimensions, style and construction details as design decisions when the brief leaves them open.
+
+Pick a few outcomes you can verify. For a **small pump with a carry handle**, they might be a recognizable body and outlet in the ¾ view, a clear opening beneath the handle from the front, and four feet sitting on the same plane. A curve sweep might be a good fit for the handle while a revolved profile might suit the outlet. You could also model the body and handle as a continuous shell if that better matches the reference. Where the shape is uncertain, render a quick blockout or compare two silhouettes before spending time on surface details.
 
 ## Choose geometry that fits the shape
 
@@ -18,14 +20,35 @@ For a visual brief, start with what should read from the target camera. A close-
 | Mechanical openings or precise joins | Construct the surrounding surfaces explicitly, or use a Python solid-modeling or mesh boolean library when that makes intersections easier to control. Check narrow walls and the output mesh after tessellation. |
 | A textured or animated asset | Use an exporter that supports the properties you need. Author UVs for image textures, meaningful pivots for moving rigid parts, or joints and weights for skinning. Check the exported result in a viewer that supports playback if motion is part of the brief. |
 
-These approaches can be combined within one asset. The examples use the standard library and a small GLB writer. A library such as **Trimesh** is useful when you want mesh operations or a scene exporter. Check that the chosen export path preserves the attributes the asset needs. [Trimesh glTF exporter](https://trimesh.org/trimesh.exchange.gltf.html)
+Combine approaches freely and replace the sample writer if another Python exporter fits the asset better. A library such as **Trimesh** is useful when you want mesh operations or a scene exporter. For a new export path, try a representative part first and check that it preserves what matters to the final asset, such as per-face material assignments, UVs, named nodes, or a moving part's pivot. [Trimesh glTF exporter](https://trimesh.org/trimesh.exchange.gltf.html)
 
 ### Add detail that reads in the render
 
 - **Silhouette and construction.** Check the main forms at the intended viewing size. Add thickness at exposed edges and believable transitions where parts meet. Place bevels where they will catch light, especially around the rim of an opening or the edge of a large flat surface.
 - **Shading and materials.** Match normals to the shape. Smooth a curved span and give intentional creases their own normals. Use roughness, metalness and color to distinguish materials at the same lighting angle. Check the highlights in the rendered GLB.
 - **Export and scale.** Keep the origin useful for placement or animation. glTF uses **+Y up, +Z forward, and meters**. Keep scale and origin consistent across revisions. Embed buffers and textures in the GLB, and use compatible UV and material data if the brief calls for textures. [glTF coordinate system and units](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#coordinate-system-and-units)
-- **Verification.** Open the generated PNG and check the asset at more than one angle. An overview can establish silhouette, while a top or close-up view can reveal a blocked opening or a bad join. Use bounds for dimensions and mesh checks for properties such as watertightness or self-intersection when required. Record observations you can point to in the image or report.
+
+## Review what the GLB actually contains
+
+With the [ModelCheck setup](README.md#quick-start) in place, render a sheet of the exported asset:
+
+```sh
+npm run --silent inspect -- review/model.glb --out review/model.png
+```
+
+Open the **`png`** path from stdout with your image tool. Read the **`report`** path for bounds, counts and animation names. In a ¾ view, check how the main forms read together. Use the front, right and top views for symmetry, clearance or alignment. For details that need more pixels, render a single view such as **`--view right --size 1600`** or orbit and zoom in the browser.
+
+| What you observe | Where to look in the generator |
+| --- | --- |
+| The handle opening disappears from the front | Check the sweep section, attachment positions and the clearance measured between the actual surfaces. |
+| The lip has flat spots or a crease catches too much light | Check sampling around the curve, normal continuity and the bevel profile. |
+| A face disappears when viewed from one side | Check triangle winding and the intended sidedness. For a shell with visible thickness, inspect the inner and outer walls separately. |
+| The GLB has the right dimensions but sits unevenly | Check part transforms and world-space contact heights. Overall bounds alone cannot establish that all feet touch the floor. |
+| An animated part rotates around the wrong spot | Check the pivot node, child offsets and keyframes. Play the exported clip and inspect the pose where the defect shows. |
+
+Use geometry checks when the brief calls for them. For a printable shell, check watertightness, self-intersections and minimum wall thickness. For a game prop, prioritize the triangle and texture budgets and check that the expected UVs, materials and pivots survive export. For motion, review the relevant poses, clearances and loop transition.
+
+Fix the source, export a distinct revision, and verify the change in the GLB. Keep the **Python source**, **final GLB** and **review image** together so the next person or agent can reproduce the result. Share the interactive viewer when the reviewer needs to explore it from additional angles. [Agent review workflow](AGENTS.md#send-the-user-a-review-link)
 
 ## Build a parametric stand
 
