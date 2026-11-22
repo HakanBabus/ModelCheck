@@ -1,50 +1,66 @@
-# ModelCheck
+<div align="center">
+  <h1>ModelCheck</h1>
+  <p><strong>Review generated 3D models, from the browser or the terminal.</strong></p>
+  <p>Open a GLB, render it from four angles, and compare two revisions in the same frame.</p>
+  <p>
+    <img src="https://img.shields.io/badge/workflow-local%20first-2c6654" alt="Local-first workflow">
+    <img src="https://img.shields.io/badge/format-GLB%202.0-3d526b" alt="GLB 2.0">
+    <a href="#quick-start"><img src="https://img.shields.io/badge/Node.js-22.12%2B-315743" alt="Node.js 22.12 or newer"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-34454d" alt="MIT license"></a>
+  </p>
+  <p>
+    <strong>English</strong> · <a href="README.tr.md">Türkçe</a>
+    <br>
+    <a href="#quick-start">Quick start</a> · <a href="#agent-workflow">Agent workflow</a> · <a href="PYTHON_MODEL_GUIDE.md">Python guide</a>
+  </p>
+  <a href="docs/rover-comparison.png"><img src="docs/rover-comparison.png" width="1040" alt="Side-by-side rover comparison with a raised rear wheel on the left and aligned wheels on the right"></a>
+  <p><sub>The baseline on the left has a raised rear wheel. The triangle count and overall bounds match. The shared side view shows the fix.</sub></p>
+</div>
 
-**A local GLB viewer for people and coding agents.** Open a generated 3D model, inspect it from several angles, and compare two revisions in the same frame.
+## One viewer, two ways to use it
 
-![ModelCheck compares a rover with a raised rear wheel against the corrected version](docs/rover-comparison.png)
+| In the browser | From the terminal |
+| --- | --- |
+| Open a GLB or browse a folder of models. Orbit, zoom, switch views, and inspect counts and bounds. | Give a coding agent a GLB path. The CLI returns a PNG for its image tool and JSON for its checks. |
+| Choose **Compare versions** to place a baseline and the current model side by side. | Pass **`--baseline`** to render the same comparison headlessly. |
 
-The rover on the left has a raised rear wheel. Its triangle count and overall bounds match the corrected rover on the right. The side view shows what changed.
+Comparisons frame both models in **shared GLB coordinates**. Changes in scale and placement stay visible. The viewer reads self-contained **GLB 2.0** files locally and previews animated models in their initial pose.
 
-## Open a GLB in the browser
+## Quick start
 
-Requires **Node.js 22.12+** and a **WebGL 2** browser.
+Run the following commands from the repository root with **Node.js 22.12+** installed. The viewer uses **WebGL 2**.
 
 ```sh
 npm ci
 npm run dev
 ```
 
-Open the URL printed by Vite. The two example rovers are ready to inspect. Click **Compare versions** and choose **Right** to see the wheel alignment.
+Open the URL printed by Vite. The sample rover loads automatically. Choose **Compare versions → Right** to see the wheel alignment, or use **Open GLB** or **Open folder** for your own files. [See the workspace](docs/workspace.png)
 
-- **Open GLB** or drop files into the viewport. Use **Open folder** to browse and filter models in a directory tree.
-- **Inspect** with orbit, pan, zoom, camera presets, grid, and wireframe. The Inspector shows mesh and triangle counts, bounds, materials, and animation clips.
-- **Capture** the current view or a four-angle PNG. **Compare versions** uses shared GLB coordinates so changes in size and position remain visible. Pick a baseline from the library or your filesystem, then export the comparison PNG or the changes as JSON.
+## Agent workflow
 
-GLB files selected in the browser stay on your device. ModelCheck reads self-contained **GLB 2.0** files with embedded buffers and textures. Animated assets are inspected in their initial pose.
-
-[See the viewer workspace](docs/workspace.png)
-
-## Give a coding agent a visual check
-
-The agent can generate a GLB with Python, run the inspection command, and open the returned **PNG** with its image tool. After editing the generator, it can render **before and after** together to check its changes.
+Generate a GLB from Python, render it, and have the agent open the PNG with its image tool. After revising the generator, render the new GLB alongside the baseline and inspect the result.
 
 ```sh
 npx playwright install chromium
 npm run --silent inspect -- public/rover.glb --baseline public/rover-raised.glb --view right --out review/rover-comparison.png
 ```
 
-The command uses the same viewer as the browser. It writes a **PNG** and **JSON** and prints their absolute paths to stdout. Comparison data includes both models and the signed changes in bounds and counts. The CLI includes hashes of the inputs and PNG. It uses a local browser and requires no API key.
+The command prints the absolute **`png`** and **`report`** paths as JSON. The report records geometry counts, bounds, and hashes. With a baseline, it also records **current minus baseline** deltas. Rendering runs locally and requires no API key.
 
-Omit **`--baseline`** to inspect one GLB. Use **`--view`** with `sheet` (default), `front`, `right`, `top`, or `iso`. Use **`--size`** for image width (480–2400 px) and **`--report`** for a custom JSON path.
+| Option | What it controls |
+| --- | --- |
+| **`--baseline <file.glb>`** | Compare with an earlier version. Leave it out to inspect one GLB. |
+| **`--view <view>`** | Choose `sheet` (four views), `front`, `right`, `top`, or `iso`. |
+| **`--size <px>`** | Set the PNG width from 480 to 2400 pixels. |
+| **`--out <file.png>`** / **`--report <file.json>`** | Set output paths. The JSON defaults to the PNG path with a `.json` extension. |
 
-On Linux, use `npx playwright install --with-deps chromium` if browser system libraries are missing. For an existing Edge installation, use **`--browser msedge`**.
+On Linux, use `npx playwright install --with-deps chromium` if browser system libraries are missing. Use **`--browser msedge`** to run with an existing Edge installation.
 
-## Build a model with Python
+## Learn and build
 
-The [Python guide](PYTHON_MODEL_GUIDE.md) walks an agent through translating a brief into dimensions, generating a parametric stand, verifying the GLB, and checking a revised model against its baseline. It includes a Blender Python export example. The [agent instructions](AGENTS.md) describe the CLI output and browser API.
-
-## Build and test
+- [**Python model guide**](PYTHON_MODEL_GUIDE.md) — Turn dimensions into a parametric stand, export it, and verify a revision with the image and report. Includes a Blender Python export example.
+- [**Agent instructions**](AGENTS.md) — Use the CLI or browser API in a coding agent's generate, inspect, and revise loop.
 
 ```sh
 npm run build
@@ -52,8 +68,6 @@ npm test
 npm run preview
 ```
 
-The browser smoke tests use the build in **`dist/`**. They exercise opening files, exporting images, and checking that CLI and browser captures match. To test with an existing Edge installation, set **`MODELCHECK_BROWSER=msedge`**.
-
-For GitHub Pages, set **Settings → Pages → Source** to **GitHub Actions** and run **Deploy demo to Pages**. The browser viewer runs as a static site. The CLI runs from a local checkout.
+The production build is in **`dist/`**. Smoke tests cover file loading, capture downloads, and PNG parity between the browser and the CLI. To test with Edge, set **`MODELCHECK_BROWSER=msedge`**. To host the static viewer with GitHub Pages, set **Settings → Pages → Source** to **GitHub Actions** and run **Deploy demo to Pages**.
 
 [MIT license](LICENSE)
