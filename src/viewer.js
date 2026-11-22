@@ -23,6 +23,31 @@ const decoderUrls = new Map(Object.entries({
   'modelcheck-decoder/basis_transcoder.wasm': basisWasm,
 }));
 const BACKGROUND = '#222a2e';
+const REVIEW_VIEWS = ['front', 'right', 'top', 'iso'];
+
+function pngBlob(canvas) {
+  return new Promise((resolve, reject) => canvas.toBlob((blob) => {
+    if (blob) resolve(blob);
+    else reject(new Error('Unable to encode the review PNG.'));
+  }, 'image/png'));
+}
+
+function comparisonDelta(baseline, candidate) {
+  const counts = ['bytes', 'meshes', 'triangles', 'vertices', 'materials'];
+  const delta = Object.fromEntries(counts.map((key) => [key, candidate[key] - baseline[key]]));
+  delta.animations = candidate.animations.length - baseline.animations.length;
+  delta.bounds = Object.fromEntries(['min', 'max', 'size'].map((key) => [
+    key, candidate.bounds[key].map((value, axis) => value - baseline.bounds[key][axis]),
+  ]));
+  return delta;
+}
+
+function normalizeBounds(box) {
+  const size = box.getSize(new THREE.Vector3());
+  const scale = 3 / Math.max(size.x, size.y, size.z);
+  const offset = box.min.clone().multiplyScalar(-scale).addScaledVector(size, -scale / 2);
+  return { scale, offset };
+}
 
 function disposeModel(root) {
   const resources = new Set();
@@ -156,14 +181,9 @@ export class Viewer {
     });
   }
 
-  async load(buffer, name) {
-    const generation = this.generation = (this.generation ?? 0) + 1;
+  async readModel(buffer, name) {
     validateGLB(buffer);
     const result = await this.loader.parseAsync(buffer, '');
-    if (generation !== this.generation) {
-      disposeModel(result.scene);
-      return null;
-    }
     const root = result.scene;
     const originalBox = new THREE.Box3().setFromObject(root, true);
     const size = originalBox.getSize(new THREE.Vector3());
@@ -172,7 +192,16 @@ export class Viewer {
       disposeModel(root);
       throw new Error('The GLB has no visible geometry with finite dimensions.');
     }
-    const metadata = describe(root, originalBox, result.animations, name, buffer.byteLength);
+    return { root, originalBox, metadata: describe(root, originalBox, result.animations, name, buffer.byteLength) };
+  }
+
+  async load(buffer, name) {
+    const generation = this.generation = (this.generation ?? 0) + 1;
+    const { root, originalBox, metadata } = await this.readModel(buffer, name);
+    if (generation !== this.generation) {
+      disposeModel(root);
+      return null;
+    }
     if (this.model) {
       this.model.removeFromParent();
       disposeModel(this.model);
@@ -183,9 +212,11 @@ export class Viewer {
     }
     this.model = new THREE.Group();
     this.model.add(root);
-    const scale = 3 / span;
+    const { scale, offset } = normalizeBounds(originalBox);
     this.model.scale.setScalar(scale);
-    this.model.position.copy(originalBox.getCenter(new THREE.Vector3())).multiplyScalar(-scale);
+    this.model.position.copy(offset);
+    this.originalBox = originalBox;
+    this.metadata = metadata;
     this.scene.add(this.model);
     this.box = new THREE.Box3().setFromObject(this.model, true);
     this.radius = this.box.getBoundingSphere(new THREE.Sphere()).radius;
@@ -242,7 +273,7 @@ export class Viewer {
     this.render();
   }
 
-  reviewCamera(key, aspect) {
+  reviewCamera(key, aspect, box = this.box) {
     const view = VIEWS[key];
     const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, .01, 40);
     camera.up.set(...view.up);
@@ -250,9 +281,9 @@ export class Viewer {
     camera.lookAt(0, 0, 0);
     camera.updateMatrixWorld();
     let halfHeight = 0;
-    for (const x of [this.box.min.x, this.box.max.x]) {
-      for (const y of [this.box.min.y, this.box.max.y]) {
-        for (const z of [this.box.min.z, this.box.max.z]) {
+    for (const x of [box.min.x, box.max.x]) {
+      for (const y of [box.min.y, box.max.y]) {
+        for (const z of [box.min.z, box.max.z]) {
           const projected = new THREE.Vector3(x, y, z).applyMatrix4(camera.matrixWorldInverse);
           halfHeight = Math.max(halfHeight, Math.abs(projected.x) / aspect, Math.abs(projected.y));
         }
@@ -267,15 +298,12 @@ export class Viewer {
     return camera;
   }
 
-  capture({ view = 'sheet', size = 1200, name = '' } = {}) {
-    if (!this.box) throw new Error('Open a model before taking a capture.');
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
+  renderCapture({ clean, draw }) {
     const rendererSize = this.renderer.getSize(new THREE.Vector2());
     const pixelRatio = this.renderer.getPixelRatio();
     const gridVisible = this.grid.visible;
     const materialModes = new Map();
-    if (view !== 'current') {
+    if (clean) {
       this.model.traverse((node) => {
         if (!node.isMesh) return;
         for (const material of [node.material].flat()) materialModes.set(material, material.wireframe);
@@ -285,6 +313,21 @@ export class Viewer {
     }
     try {
       this.renderer.setPixelRatio(1);
+      return draw();
+    } finally {
+      for (const [material, wireframe] of materialModes) material.wireframe = wireframe;
+      this.grid.visible = gridVisible;
+      this.renderer.setPixelRatio(pixelRatio);
+      this.renderer.setSize(rendererSize.x, rendererSize.y, false);
+      this.render();
+    }
+  }
+
+  capture({ view = 'sheet', size = 1200, name = '' } = {}) {
+    if (!this.box) throw new Error('Open a model before taking a capture.');
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    return this.renderCapture({ clean: view !== 'current', draw: () => {
       if (view === 'sheet') {
         const cellWidth = Math.floor(size / 2) - 20;
         const cellHeight = Math.round(cellWidth * .72);
@@ -300,7 +343,7 @@ export class Viewer {
         context.textAlign = 'right';
         context.fillText(name, size - 18, 31, size * .52);
         context.textAlign = 'left';
-        ['front', 'right', 'top', 'iso'].forEach((key, index) => {
+        REVIEW_VIEWS.forEach((key, index) => {
           const x = 14 + (index % 2) * (cellWidth + 12);
           const y = 46 + Math.floor(index / 2) * (cellHeight + 35);
           this.drawView(context, this.reviewCamera(key, cellWidth / cellHeight), x, y, cellWidth, cellHeight);
@@ -318,17 +361,103 @@ export class Viewer {
         }
         this.drawView(context, camera, 0, 0, canvas.width, canvas.height);
       }
-      return new Promise((resolve, reject) => canvas.toBlob((blob) => {
-        if (blob) resolve(blob);
-        else reject(new Error('Unable to encode the review PNG.'));
-      }, 'image/png'));
-    } finally {
-      for (const [material, wireframe] of materialModes) material.wireframe = wireframe;
-      this.grid.visible = gridVisible;
-      this.renderer.setPixelRatio(pixelRatio);
-      this.renderer.setSize(rendererSize.x, rendererSize.y, false);
-      this.render();
+      return pngBlob(canvas);
+    } });
+  }
+
+  async prepareComparison(buffer, name) {
+    const model = this.model;
+    const candidate = this.metadata;
+    const candidateBox = this.originalBox;
+    const baseline = await this.readModel(buffer, name);
+    if (model !== this.model) {
+      disposeModel(baseline.root);
+      throw new Error('Model selection changed. Start the comparison again.');
     }
+    const union = candidateBox.clone().union(baseline.originalBox);
+    const { scale, offset } = normalizeBounds(union);
+    if (!Number.isFinite(scale) || scale <= 0 || !offset.toArray().every(Number.isFinite)) {
+      disposeModel(baseline.root);
+      throw new Error('The two models are too far apart to frame together.');
+    }
+    const bounds = new THREE.Box3(
+      union.min.clone().multiplyScalar(scale).add(offset),
+      union.max.clone().multiplyScalar(scale).add(offset),
+    );
+    const group = new THREE.Group();
+    group.add(baseline.root);
+    group.scale.setScalar(scale);
+    group.position.copy(offset);
+    const report = {
+      baseline: baseline.metadata, candidate,
+      delta: comparisonDelta(baseline.metadata, candidate),
+      framing: 'shared-glb-coordinates',
+    };
+    let disposed = false;
+    return {
+      report,
+      capture: (options) => {
+        if (disposed || model !== this.model) throw new Error('Model selection changed. Start the comparison again.');
+        return this.captureComparison(group, bounds, scale, offset, report, options);
+      },
+      dispose() {
+        if (disposed) return;
+        disposed = true;
+        disposeModel(group);
+      },
+    };
+  }
+
+  captureComparison(group, bounds, scale, offset, report, { view, size }) {
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    const views = view === 'sheet' ? REVIEW_VIEWS : [view];
+    const margin = 14;
+    const gutter = 12;
+    const width = Math.floor((size - margin * 2 - gutter) / 2);
+    const height = Math.round(width * .61);
+    const rowHeight = height + 34;
+    canvas.width = size;
+    canvas.height = 72 + views.length * rowHeight;
+    context.fillStyle = '#171c1e';
+    context.fillRect(0, 0, size, canvas.height);
+    context.fillStyle = '#c4f6e6';
+    context.font = '600 20px system-ui';
+    context.fillText('ModelCheck / Compare', margin, 28);
+    context.font = '14px system-ui';
+    context.fillStyle = '#d6e1e3';
+    context.fillText(`Baseline · ${report.baseline.name}`, margin, 55, width);
+    context.fillText(`Current · ${report.candidate.name}`, margin + width + gutter, 55, width);
+
+    // Both GLBs use the union's transform so differences in scale and origin remain visible.
+    const model = this.model;
+    const oldScale = model.scale.clone();
+    const oldPosition = model.position.clone();
+    const wasVisible = model.visible;
+    return this.renderCapture({ clean: true, draw: () => {
+      model.scale.setScalar(scale);
+      model.position.copy(offset);
+      this.scene.add(group);
+      try {
+        views.forEach((key, index) => {
+          const y = 70 + index * rowHeight;
+          const camera = this.reviewCamera(key, width / height, bounds);
+          model.visible = false;
+          group.visible = true;
+          this.drawView(context, camera, margin, y, width, height);
+          group.visible = false;
+          model.visible = true;
+          this.drawView(context, camera, margin + width + gutter, y, width, height);
+          context.fillText(VIEWS[key].label, margin, y + height + 20);
+        });
+        return pngBlob(canvas);
+      } finally {
+        group.removeFromParent();
+        model.scale.copy(oldScale);
+        model.position.copy(oldPosition);
+        model.visible = wasVisible;
+      }
+    } });
   }
 
   drawView(context, camera, x, y, width, height) {

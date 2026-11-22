@@ -1,18 +1,46 @@
-# Generate and inspect a GLB with Python
+# Python model generation for coding agents
+
+Keep an editable Python generator, export a GLB, and open a rendered image of the output before reporting that a visual requirement is met.
+
+## Turn the brief into parameters
+
+Write down what you can check before making geometry. For a display stand, that might be **1.6 m wide, 1.2 m high and 0.8 m deep**, centered on **X** and **Z**, with its base on **Y = 0**. Identify which parts need to move when a dimension changes. Map those decisions to named parameters in the generator.
+
+Use pure Python for basic procedural geometry. Use **Blender Python** when you need modifiers, detailed materials, UVs, or animation. Keep equivalent assets in the same units and coordinate system across revisions so ModelCheck shows real changes in placement and size.
+
+## Build a parametric stand
+
+After following the setup in the [README](README.md), run this from the repository root:
+
+```sh
+python examples/generate_stand.py --width 1.6 --height 1.2 --depth 0.8 --out review/stand-v1.glb
+npm run --silent inspect -- review/stand-v1.glb --out review/stand-v1.png
+```
+
+[The generator](examples/generate_stand.py) uses **`make_stand(width, height, depth)`** to define four parts. The base is centered at half its thickness on Y, so the bottom is at zero. The platform's upper face is at **`height`**. Both posts are derived from those dimensions and remain symmetric when the stand changes width.
+
+1. Open the **`png`** path from stdout with the agent's image tool. Check that the base and platform span the posts, that the posts are mirrored, and that there are no visible gaps.
+2. Open the **`report`** path. Check **`model.bounds.size`** against **`[1.6, 1.2, 0.8]`** in XYZ order, allowing a small floating-point tolerance. Check that **`model.bounds.min[1]`** is near zero.
+3. When the brief changes, regenerate into a distinct file. Suppose the stand now needs to be **2.0 m wide**. Export the revised model and compare it with the previous one.
+
+```sh
+python examples/generate_stand.py --width 2.0 --height 1.2 --depth 0.8 --out review/stand-v2.glb
+npm run --silent inspect -- review/stand-v2.glb --baseline review/stand-v1.glb --view front --out review/stand-comparison.png
+```
+
+Check that the revised stand is wider and remains centered in the PNG. Expect **`delta.bounds.size[0]`** to be near **+0.4**, with no change to height, depth, or triangle count. Keep the generator, the final GLB, and a review image for the handoff.
 
 ## Run the dependency-free example
 
 Run these commands from the ModelCheck root, after installing the Node dependencies and browser listed in the [README](README.md). The generator uses the Python standard library.
 
 ```sh
-python examples/generate_rover.py --raised-wheel --out review/before/rover.glb
-npm run inspect -- review/before/rover.glb --out review/before/rover.png
-
-python examples/generate_rover.py --out review/after/rover.glb
-npm run inspect -- review/after/rover.glb --out review/after/rover.png
+python examples/generate_rover.py --raised-wheel --out review/rover-before.glb
+python examples/generate_rover.py --out review/rover-after.glb
+npm run --silent inspect -- review/rover-after.glb --baseline review/rover-before.glb --view right --out review/rover-comparison.png
 ```
 
-In the first PNG, look at the **Right (+X)** panel. The rear-right tire is higher because **`make_rover()`** sets its center to **`y = .59`**, while the other wheel centers are **`y = .43`**. The second command pair puts all four centers at the same height. The two versions use identical overall bounds and mesh counts. The difference appears in the rendered silhouette and wheel alignment.
+In the **Right (+X)** comparison, the rear-right tire on the baseline is higher because **`make_rover()`** sets its center to **`y = .59`**. The revised version puts all four centers at **`y = .43`**. The two versions have identical overall bounds and mesh counts. Use the image to verify the wheel alignment.
 
 ### Change the example
 

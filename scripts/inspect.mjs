@@ -7,8 +7,9 @@ import { launchBrowser, startIsolatedSite } from './local-browser.mjs';
 const HELP = `ModelCheck
 Usage: npm run inspect -- <model.glb> [options]
 
-  --out <path.png>      Default: review/<name>-review.png
-  --report <path.json> Default: the PNG path with a .json suffix
+  --baseline <file.glb>  Compare against an earlier version using shared coordinates
+  --out <path.png>      Default: review/<name>-review.png or review/<name>-comparison.png
+  --report <path.json>  Default: the PNG path with a .json suffix
   --view <view>         sheet | front | right | top | iso (default: sheet)
   --size <px>           PNG width, integer 480–2400 (default: 1200)
   --browser <channel>   Optional installed browser, e.g. msedge or chrome
@@ -32,6 +33,7 @@ async function inspect() {
     allowPositionals: true,
     options: {
       out: { type: 'string' }, report: { type: 'string' },
+      baseline: { type: 'string' },
       view: { type: 'string', default: 'sheet' }, size: { type: 'string', default: '1200' },
       browser: { type: 'string' }, help: { type: 'boolean', short: 'h' },
     },
@@ -46,11 +48,17 @@ async function inspect() {
   if (!Number.isInteger(size) || size < 480 || size > 2400) throw new Error('--size must be an integer from 480 to 2400.');
   const input = resolve(positionals[0]);
   const name = basename(input);
-  const png = resolve(values.out ?? `review/${name.slice(0, -4)}-${view === 'sheet' ? 'review' : view}.png`);
+  const baselinePath = values.baseline === undefined ? null : resolve(values.baseline);
+  if (baselinePath && extname(baselinePath).toLowerCase() !== '.glb') throw new Error('--baseline must point to a .glb file.');
+  const suffix = view === 'sheet' ? 'review' : view;
+  const comparisonSuffix = view === 'sheet' ? 'comparison' : `comparison-${view}`;
+  const png = resolve(values.out ?? `review/${name.slice(0, -4)}-${baselinePath ? comparisonSuffix : suffix}.png`);
   if (extname(png).toLowerCase() !== '.png') throw new Error('--out must end in .png.');
   const json = resolve(values.report ?? `${png.slice(0, -4)}.json`);
   if (extname(json).toLowerCase() !== '.json') throw new Error('--report must end in .json.');
-  const data = await readFile(input);
+  const [data, baselineData] = await Promise.all([
+    readFile(input), baselinePath && readFile(baselinePath),
+  ]);
   const site = await startIsolatedSite();
   let browser;
   try {
@@ -64,14 +72,29 @@ async function inspect() {
     }
     const report = await page.evaluate(() => window.modelCheck?.report());
     if (!report) throw new Error(await page.locator('#stage-message').textContent());
-    const base64 = await page.evaluate(async (options) => {
-      const image = await window.modelCheck.capture(options);
-      return new Promise((resolve, reject) => {
+    if (baselinePath) {
+      await page.locator('#baseline-file').setInputFiles({
+        name: basename(baselinePath), mimeType: 'model/gltf-binary', buffer: baselineData,
+      });
+    }
+    const { base64, comparison } = await page.evaluate(async (options) => {
+      const baseline = document.getElementById('baseline-file').files[0];
+      let image;
+      let comparison;
+      if (baseline) {
+        const result = await window.modelCheck.compare(baseline, options);
+        image = result.image;
+        comparison = { baseline: result.baseline, delta: result.delta, framing: result.framing };
+      } else {
+        image = await window.modelCheck.capture(options);
+      }
+      const base64 = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result.split(',')[1]);
         reader.onerror = () => reject(reader.error);
         reader.readAsDataURL(image);
       });
+      return { base64, comparison };
     }, { view, size });
     const image = Buffer.from(base64, 'base64');
     const output = {
@@ -82,6 +105,11 @@ async function inspect() {
         sha256: createHash('sha256').update(image).digest('hex'),
       },
     };
+    if (comparison) {
+      output.baseline = { ...comparison.baseline, sha256: createHash('sha256').update(baselineData).digest('hex') };
+      output.delta = comparison.delta;
+      output.framing = comparison.framing;
+    }
     await writeAtomic(png, image);
     await writeAtomic(json, JSON.stringify(output, null, 2) + '\n');
     console.log(JSON.stringify({ png, report: json, view }));

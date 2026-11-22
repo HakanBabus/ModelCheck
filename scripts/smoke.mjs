@@ -8,6 +8,7 @@ import { launchBrowser, startSite } from './local-browser.mjs';
 
 const run = promisify(execFile);
 const sample = 'public/rover.glb';
+const baseline = 'public/rover-raised.glb';
 const temp = await mkdtemp(join(tmpdir(), 'modelcheck-test-'));
 let browser;
 let site;
@@ -80,11 +81,47 @@ try {
   if (process.env.MODELCHECK_DESKTOP_SCREENSHOT) {
     await page.screenshot({ path: process.env.MODELCHECK_DESKTOP_SCREENSHOT, fullPage: true });
   }
+  await page.getByRole('button', { name: 'Compare versions' }).click();
+  const comparisonDialog = page.getByRole('dialog', { name: 'Compare versions' });
+  const comparisonImage = comparisonDialog.locator('#comparison-image');
+  const sheetReady = () => page.waitForFunction(() => document.querySelector('#comparison-image').naturalHeight === 1624);
+  await sheetReady();
+  assert.equal(await comparisonDialog.getByLabel('Baseline', { exact: true }).inputValue(), '1');
+  await comparisonDialog.getByLabel('View', { exact: true }).selectOption('right');
+  await page.waitForFunction(() => document.querySelector('#comparison-image').naturalHeight === 460);
+  const [comparisonDownload] = await Promise.all([
+    page.waitForEvent('download'), comparisonDialog.getByRole('button', { name: 'Download comparison PNG' }).click(),
+  ]);
+  const comparedPng = await readFile(await comparisonDownload.path());
+  assert.equal(comparisonDownload.suggestedFilename(), 'rover-comparison.png');
+  assert.deepEqual(sizeOfPng(comparedPng), [1200, 460]);
+  const [changesDownload] = await Promise.all([
+    page.waitForEvent('download'), comparisonDialog.getByRole('button', { name: 'Download changes JSON' }).click(),
+  ]);
+  const compared = JSON.parse(await readFile(await changesDownload.path(), 'utf8'));
+  assert.deepEqual(compared.candidate, sampleData);
+  assert.equal(compared.baseline.name, 'rover-raised.glb');
+  assert.equal(compared.framing, 'shared-glb-coordinates');
+  assert.deepEqual(compared.delta.bounds.size, [0, 0, 0]);
+
+  await page.locator('#baseline-file').setInputFiles({
+    name: 'bad-baseline.glb', mimeType: 'model/gltf-binary', buffer: Buffer.from('invalid'),
+  });
+  await page.waitForFunction(() => document.querySelector('#comparison-status').textContent.includes('too small'));
+  assert(await comparisonDialog.getByRole('button', { name: 'Download comparison PNG' }).isDisabled());
+  await page.locator('#baseline-file').setInputFiles(baseline);
+  await comparisonImage.waitFor({ state: 'visible' });
+  await page.keyboard.press('Escape');
+  await comparisonDialog.waitFor({ state: 'hidden' });
+  assert.deepEqual(await page.evaluate(() => window.modelCheck.report()), sampleData);
   await page.setViewportSize({ width: 390, height: 844 });
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
   if (process.env.MODELCHECK_MOBILE_SCREENSHOT) {
     await page.screenshot({ path: process.env.MODELCHECK_MOBILE_SCREENSHOT, fullPage: true });
   }
+  await page.getByRole('button', { name: 'Compare versions' }).click();
+  await sheetReady();
+  assert(await comparisonDialog.evaluate((dialog) => dialog.scrollWidth <= dialog.clientWidth));
   await page.goto(`${site.url}?automation`);
   await page.locator('#state[data-phase="idle"]').waitFor();
   const api = await page.evaluate(async () => {
@@ -121,8 +158,18 @@ try {
   const isolated = join(temp, 'top.png');
   await run(process.execPath, ['scripts/inspect.mjs', sample, '--out', isolated, '--view', 'top', '--size', '640']);
   assert.deepEqual(sizeOfPng(await readFile(isolated)), [640, 457]);
+  const comparisonOutput = join(temp, 'compare.png');
+  const cliComparison = JSON.parse((await run(process.execPath, [
+    'scripts/inspect.mjs', sample, '--baseline', baseline, '--view', 'right', '--out', comparisonOutput,
+  ])).stdout);
+  const comparisonReport = JSON.parse(await readFile(cliComparison.report, 'utf8'));
+  assert.deepEqual(comparisonReport.delta, compared.delta);
+  assert.equal(comparisonReport.framing, compared.framing);
+  assert.match(comparisonReport.baseline.sha256, /^[0-9a-f]{64}$/);
+  assert.notEqual(comparisonReport.baseline.sha256, comparisonReport.model.sha256);
+  assert.deepEqual(await readFile(comparisonOutput), comparedPng);
   await assert.rejects(run(process.execPath, ['scripts/inspect.mjs', sample, '--size', '399']), /size must/);
-  console.log('Passed: sample, folder/filter, drag/drop, invalid-file recovery, camera, exports, browser API, CLI parity and mobile layout.');
+  console.log('Passed: browser and CLI captures, comparison exports and parity, invalid-file recovery, library, and mobile layout.');
 } finally {
   try { await browser?.close(); } finally {
     try { await site?.close(); } finally { await rm(temp, { recursive: true, force: true }); }

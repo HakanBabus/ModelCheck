@@ -51,6 +51,7 @@
         <h2>Capture</h2>
         <p>Export four fixed views for visual review, or save the current camera angle.</p>
         <button id="sheet" class="primary" disabled><i data-lucide="layout-grid"></i> Download review PNG</button>
+        <button id="compare" disabled><i data-lucide="columns-2"></i> Compare versions</button>
         <button id="snapshot" disabled><i data-lucide="camera"></i> Save current view</button>
         <button id="report" disabled><i data-lucide="file-json"></i> Download model data</button>
       </section>
@@ -62,6 +63,33 @@
       </section>
     </aside>
   </main>
+  <dialog id="comparison" aria-labelledby="comparison-title">
+    <header class="comparison-header">
+      <div><h2 id="comparison-title">Compare versions</h2><p>Both models use the same scale and GLB coordinates.</p></div>
+      <form method="dialog"><button type="submit" class="icon" aria-label="Close comparison"><i data-lucide="x"></i></button></form>
+    </header>
+    <div class="comparison-toolbar">
+      <div class="comparison-field"><label for="baseline-options">Baseline</label><select id="baseline-options"></select></div>
+      <button id="open-baseline"><i data-lucide="file-plus-2"></i> Choose GLB</button>
+      <input id="baseline-file" type="file" accept=".glb,model/gltf-binary" aria-label="Choose baseline GLB" hidden>
+      <div class="comparison-field"><label for="comparison-view">View</label><select id="comparison-view">
+        <option value="sheet">All views</option>
+        <option value="front">Front</option>
+        <option value="right">Right</option>
+        <option value="top">Top</option>
+        <option value="iso">¾</option>
+      </select></div>
+    </div>
+    <div class="comparison-content">
+      <p id="comparison-status" role="status"></p>
+      <div class="comparison-changes" id="comparison-changes" hidden></div>
+      <img id="comparison-image" alt="Baseline and current GLB rendered side by side" hidden>
+    </div>
+    <footer class="comparison-footer">
+      <button id="save-comparison" class="primary" disabled><i data-lucide="layout-grid"></i> Download comparison PNG</button>
+      <button id="save-comparison-json" disabled><i data-lucide="file-json"></i> Download changes JSON</button>
+    </footer>
+  </dialog>
   <script type="module" src="/src/app.js"></script>
 </body>
 </html>
